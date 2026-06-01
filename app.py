@@ -97,15 +97,24 @@ elif menu == "Manutenção Equipamentos":
 elif menu == "Baixas":
     st.header("Baixa de Equipamento")
     cod = st.text_input("Código Controle Mult")
+    
     if cod:
-        item = supabase.table("equipamentos").select("*").eq("codigo_controle", cod).eq("status", "Ativo").single().execute()
-        if item.data:
-            st.write(f"**Equipamento:** {item.data['nome']} | **Usuário:** {item.data['colaborador']}")
+        # Removemos o .single() e pegamos a lista de resultados
+        response = supabase.table("equipamentos").select("*").eq("codigo_controle", cod).eq("status", "Ativo").execute()
+        
+        # Verificamos se a lista 'data' não está vazia
+        if response.data and len(response.data) > 0:
+            item = response.data[0] # Pegamos o primeiro item da lista
+            st.write(f"**Equipamento:** {item['nome']} | **Usuário:** {item['colaborador']}")
+            
             motivo = st.text_area("Motivo da Baixa (min 5 caracteres)")
             if st.button("Confirmar Baixa") and len(motivo) >= 5:
                 supabase.table("equipamentos").update({"status": "Baixado", "motivo_baixa": motivo}).eq("codigo_controle", cod).execute()
                 registrar_log("Baixa", f"Baixa no {cod}: {motivo}")
+                st.success("Baixa realizada com sucesso!")
                 st.rerun()
+        else:
+            st.warning("Equipamento não encontrado ou já está baixado.")
 
 elif menu == "Log":
     st.header("Logs do Sistema")
