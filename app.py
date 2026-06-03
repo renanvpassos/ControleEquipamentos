@@ -169,7 +169,7 @@ if menu == "Cadastrar Equipamento":
     # IMPORTANTE: Removemos o clear_on_submit=True para evitar perda de dados dos arquivos no clique
     with st.form("cadastro_equipamento_form"):
         tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"])
-        marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client"])
+        marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC"])
         modelo = st.text_input("Modelo (Opcional)")
         colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
