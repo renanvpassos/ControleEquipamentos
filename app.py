@@ -283,7 +283,22 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                     cols = st.columns(min(len(lista_fotos_atual), 5))
                     for i, url_f in enumerate(lista_fotos_atual):
                         with cols[i % 5]:
-                            st.image(url_f, width=100)
+                            try:
+                                # CORREÇÃO: Extraímos o caminho relativo do arquivo a partir da URL guardada
+                                # Exemplo de URL: .../storage/v1/object/public/equipamentos-fotos/CODIGO/foto.png
+                                # Precisamos apenas de: "CODIGO/foto.png"
+                                if "equipamentos-fotos/" in url_f:
+                                    caminho_relativo = url_f.split("equipamentos-fotos/")[-1]
+                                else:
+                                    caminho_relativo = url_f
+                                
+                                # Baixa os bytes do arquivo de forma segura e injeta direto no st.image
+                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relativo)
+                                st.image(bytes_foto, width=120)
+                            except Exception:
+                                # Caso falte alguma imagem ou o link quebre, ele tenta exibir o link bruto textualmente
+                                st.caption("⚠️ Erro ao carregar prévia")
+                            
                             if st.checkbox("Manter foto", value=True, key=f"foto_{i}"):
                                 fotos_para_manter.append(url_f)
                 else:
@@ -334,6 +349,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                             st.rerun()
                             
                 if btn_deletar:
+                    # Opcional: Você pode deletar a pasta de fotos no Storage aqui se desejar limpar o storage
                     supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
                     registrar_log("Deletar", f'O usuário "{st.session_state.user.email}" deletou o equipamento {equip_selecionado["codigo_controle"]}.')
                     st.success("Equipamento removido do banco de dados!")
