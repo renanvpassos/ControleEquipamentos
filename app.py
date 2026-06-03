@@ -1,6 +1,12 @@
 import streamlit as st
 from supabase import create_client
-from datetime import date
+from datetime import date, datetime
+import pandas as pd
+import io
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
 
 # --- Configuração Supabase ---
 @st.cache_resource
@@ -14,6 +20,18 @@ st.set_page_config(page_title="Gestão de Equipamentos", layout="wide")
 # --- Lógica de Login/Cadastro ---
 if "user" not in st.session_state:
     st.session_state.user = None
+if "user_role" not in st.session_state:
+    st.session_state.user_role = None
+
+def get_user_role(user_id):
+    try:
+        # Busca o cargo do usuário na tabela 'perfis'
+        res = supabase.table("perfis").select("cargo").eq("id", user_id).single().execute()
+        if res.data:
+            return res.data.get("cargo")
+        return None
+    except Exception:
+        return None
 
 if not st.session_state.user:
     tab1, tab2 = st.tabs(["Login", "Cadastro"])
@@ -24,22 +42,49 @@ if not st.session_state.user:
             try:
                 res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
                 st.session_state.user = res.user
+                st.session_state.user_role = get_user_role(res.user.id)
                 st.rerun()
             except Exception:
                 st.error("Credenciais inválidas.")
         if st.button("Esqueci minha senha"):
             if email:
-                supabase.auth.reset_password_email(email)
-                st.info("Verifique seu e-mail para resetar a senha.")
+                try:
+                    supabase.auth.reset_password_email(email)
+                    st.info("Verifique seu e-mail para resetar a senha.")
+                except Exception as e:
+                    st.error(f"Erro ao enviar e-mail: {e}")
     with tab2:
         c_email = st.text_input("Email", key="cad_email")
         c_senha = st.text_input("Senha", type="password", key="cad_pass")
         if st.button("Cadastrar"):
-            supabase.auth.sign_up({"email": c_email, "password": c_senha})
-            st.info("Confirmação enviada para o seu e-mail.")
+            try:
+                res = supabase.auth.sign_up({"email": c_email, "password": c_senha})
+                if res.user:
+                    # Cria o perfil padrão com cargo 'Nenhum'
+                    supabase.table("perfis").insert({
+                        "id": res.user.id,
+                        "email": c_email,
+                        "cargo": "Nenhum"
+                    }).execute()
+                st.info("Confirmação enviada para o seu e-mail. Verifique sua caixa de entrada.")
+            except Exception as e:
+                st.error(f"Erro ao cadastrar: {e}")
     st.stop()
 
-# --- Funções Auxiliares ---
+# --- Verificação de Permissão Bloqueante ---
+# Se o cargo for 'Nenhum' ou não mapeado, bloqueia o acesso aos menus.
+if not st.session_state.user_role or st.session_state.user_role == "Nenhum":
+    st.sidebar.title("Menu")
+    st.sidebar.info(f"Usuário: {st.session_state.user.email}")
+    st.sidebar.warning("Cargo: Nenhum")
+    st.error("Você não possui permissões (Supervisor/Master) para acessar as funcionalidades do sistema. Solicite acesso ao administrador.")
+    if st.sidebar.button("Sair"):
+        st.session_state.user = None
+        st.session_state.user_role = None
+        st.rerun()
+    st.stop()
+
+# --- Funções Auxiliares de Log ---
 def registrar_log(acao, resumo):
     supabase.table("logs").insert({
         "usuario_email": st.session_state.user.email,
@@ -47,76 +92,378 @@ def registrar_log(acao, resumo):
         "resumo": resumo
     }).execute()
 
+# --- Funções de Geração de Arquivos (PDF e Excel) ---
+def gerar_excel(df):
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df.to_excel(writer, index=False, sheet_name='Equipamentos')
+    return output.getvalue()
+
+def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=colors.HexColor("#1A365D"), spaceAfter=20)
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10)
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.white, fontName="Helvetica-Bold")
+    
+    story.append(Paragraph(titulo_relatorio, title_style))
+    story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
+    story.append(Spacer(1, 15))
+    
+    # Seleção de colunas-chave para não estourar a largura da página PDF
+    colunas_pdf = ['codigo_controle', 'tipo', 'marca', 'colaborador', 'status', 'data_registro']
+    df_pdf = df[colunas_pdf].copy() if all(c in df.columns for c in colunas_pdf) else df.iloc[:, :6]
+    
+    table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
+    
+    for _, row in df_pdf.iterrows():
+        row_cells = []
+        for val in row.values:
+            row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
+        table_data.append(row_cells)
+    
+    t = Table(table_data, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")),
+        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAFC")]),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
+    ]))
+    story.append(t)
+    doc.build(story)
+    return buffer.getvalue()
+
+# --- Configuração Dinâmica de Menus baseada no Cargo ---
+# Ordem estipulada: Cadastrar, Editar, Lista, Relatórios, Log.
+opcoes_menu = []
+if st.session_state.user_role in ["Supervisor", "Master"]:
+    opcoes_menu.append("Cadastrar Equipamento")
+if st.session_state.user_role == "Master":
+    opcoes_menu.append("Editar Cadastro")
+if st.session_state.user_role in ["Supervisor", "Master"]:
+    opcoes_menu.append("Lista de Equipamentos")
+if st.session_state.user_role == "Master":
+    opcoes_menu.append("Relatórios")
+    opcoes_menu.append("Log de Atividades")
+
 # --- Menu Lateral ---
 st.sidebar.title("Menu")
-st.sidebar.info(f"Usuário: {st.session_state.user.email}")
-menu = st.sidebar.radio("Navegação", ["Equipamentos", "Manutenção Equipamentos", "Baixas", "Log"])
+st.sidebar.info(f"Usuário: {st.session_state.user.email}\n\nCargo: {st.session_state.user_role}")
+menu = st.sidebar.radio("Navegação", opcoes_menu)
 
-# --- Conteúdo Principal ---
-if menu == "Equipamentos":
-    st.header("Lista de Equipamentos")
-    data = supabase.table("equipamentos").select("*").execute()
-    st.dataframe(data.data)
+if st.sidebar.button("Sair do Sistema"):
+    st.session_state.user = None
+    st.session_state.user_role = None
+    st.rerun()
 
-elif menu == "Manutenção Equipamentos":
-    sub = st.radio("Ação", ["Adicionar Novo", "Editar/Excluir"])
+# --- 1. CADASTRAR EQUIPAMENTO (Supervisor e Master) ---
+if menu == "Cadastrar Equipamento":
+    st.header("Cadastrar Novo Equipamento")
     
-    if sub == "Adicionar Novo":
-        with st.form("add_form"):
-            codigo = st.text_input("Código Controle Mult")
-            nome = st.text_input("Nome")
-            marca = st.text_input("Marca"); modelo = st.text_input("Modelo")
-            serial = st.text_input("Número de série"); colab = st.text_input("Colaborador")
-            desc = st.text_area("Descrição")
-            st.text(f"Data de Registro: {date.today().strftime('%d/%m/%Y')}")
-            
-            if st.form_submit_button("Salvar Cadastro"):
-                # Bloqueio de duplicidade de baixa
-                check = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).eq("status", "Baixado").execute()
-                if check.data:
-                    st.error("Equipamento com este código foi dado em baixa e não pode ser re-cadastrado.")
-                else:
-                    supabase.table("equipamentos").insert({"codigo_controle": codigo, "nome": nome, "marca": marca, "modelo": modelo, "serial_number": serial, "colaborador": colab, "descricao": desc, "data_registro": str(date.today())}).execute()
-                    registrar_log("Adicionar", f"Equipamento {codigo} cadastrado.")
-                    st.success("Salvo!")
-
-    elif sub == "Editar/Excluir":
-        cod_busca = st.text_input("Digite o código para buscar:")
-        if cod_busca:
-            item = supabase.table("equipamentos").select("*").eq("codigo_controle", cod_busca).single().execute()
-            if item.data:
-                with st.form("edit_form"):
-                    n_nome = st.text_input("Nome", value=item.data['nome'])
-                    if st.form_submit_button("Salvar Alterações"):
-                        supabase.table("equipamentos").update({"nome": n_nome}).eq("codigo_controle", cod_busca).execute()
-                        registrar_log("Editar", f"Editado: {cod_busca}")
-                    if st.form_submit_button("🗑️ Deletar"):
-                        supabase.table("equipamentos").delete().eq("codigo_controle", cod_busca).execute()
-                        registrar_log("Deletar", f"Excluído: {cod_busca}")
-
-elif menu == "Baixas":
-    st.header("Baixa de Equipamento")
-    cod = st.text_input("Código Controle Mult")
-    
-    if cod:
-        # Removemos o .single() e pegamos a lista de resultados
-        response = supabase.table("equipamentos").select("*").eq("codigo_controle", cod).eq("status", "Ativo").execute()
+    with st.form("cadastro_equipamento_form", clear_on_submit=True):
+        tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"])
+        marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer"])
+        modelo = st.text_input("Modelo (Opcional)")
+        colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
+        descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
+        codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
         
-        # Verificamos se a lista 'data' não está vazia
-        if response.data and len(response.data) > 0:
-            item = response.data[0] # Pegamos o primeiro item da lista
-            st.write(f"**Equipamento:** {item['nome']} | **Usuário:** {item['colaborador']}")
+        fotos = st.file_uploader("Fotos do equipamento (Obrigatório - Máx 10 fotos)*", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
+        
+        if st.form_submit_button("Salvar Cadastro"):
+            codigo = codigo_input.strip().upper()
             
-            motivo = st.text_area("Motivo da Baixa (min 5 caracteres)")
-            if st.button("Confirmar Baixa") and len(motivo) >= 5:
-                supabase.table("equipamentos").update({"status": "Baixado", "motivo_baixa": motivo}).eq("codigo_controle", cod).execute()
-                registrar_log("Baixa", f"Baixa no {cod}: {motivo}")
-                st.success("Baixa realizada com sucesso!")
-                st.rerun()
-        else:
-            st.warning("Equipamento não encontrado ou já está baixado.")
+            # Validações estruturais obrigatórias
+            if not tipo or not marca or not colaborador.strip() or not codigo or not fotos:
+                st.error("Por favor, preencha todos os campos obrigatórios (*) e anexe pelo menos uma foto.")
+            elif len(fotos) > 10:
+                st.error("Permitido anexar no máximo 10 fotos.")
+            else:
+                # Validação de duplicidade
+                check = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
+                if check.data:
+                    st.error(f"Já existe um equipamento cadastrado com o código {codigo}.")
+                else:
+                    urls_fotos = []
+                    erro_upload = False
+                    
+                    # Upload das fotos para o Bucket do Supabase Storage
+                    for idx, foto in enumerate(fotos):
+                        extensao = foto.name.split(".")[-1]
+                        caminho_storage = f"{codigo}/{codigo}_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                        try:
+                            # Certifique-se de que o bucket 'equipamentos-fotos' esteja criado e público no Supabase
+                            supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                            url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                            urls_fotos.append(url)
+                        except Exception as e:
+                            st.error(f"Falha ao enviar a foto {foto.name}: {e}")
+                            erro_upload = True
+                            break
+                    
+                    if not erro_upload:
+                        # Inserção no banco de dados
+                        supabase.table("equipamentos").insert({
+                            "codigo_controle": codigo,
+                            "tipo": tipo,
+                            "marca": marca,
+                            "modelo": modelo if modelo else None,
+                            "colaborador": colaborador.strip(),
+                            "descricao": descricao if descricao else None,
+                            "fotos": urls_fotos,
+                            "status": "Ativo",
+                            "criado_por": st.session_state.user.email,
+                            "data_registro": str(date.today())
+                        }).execute()
+                        
+                        # Log estruturado solicitado
+                        log_msg = f'O usuário: "{st.session_state.user.email}" cadastrou o equipamento: "{tipo}", "Código de controle": {codigo}, "Colaborador Responsável": "{colaborador.strip()}", "Data do cadastro": "{date.today().strftime("%d/%m/%Y")}"'
+                        registrar_log("Inserir", log_msg)
+                        
+                        st.success(f"Equipamento {codigo} cadastrado com sucesso!")
 
-elif menu == "Log":
-    st.header("Logs do Sistema")
+# --- 2. EDITAR CADASTRO (Apenas Master) ---
+elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
+    st.header("Editar / Remover Cadastro de Equipamento")
+    
+    busca_ref = st.text_input("Buscar equipamento para edição (Digite qualquer referência: Código, Nome, Colaborador, Marca...):")
+    
+    if busca_ref:
+        # Busca generalizada nas colunas principais
+        res_busca = supabase.table("equipamentos").select("*").execute()
+        resultados = []
+        ref_lower = busca_ref.lower()
+        
+        for item in res_busca.data:
+            if (ref_lower in str(item.get("codigo_controle", "")).lower() or
+                ref_lower in str(item.get("tipo", "")).lower() or
+                ref_lower in str(item.get("marca", "")).lower() or
+                ref_lower in str(item.get("modelo", "")).lower() or
+                ref_lower in str(item.get("colaborador", "")).lower()):
+                resultados.append(item)
+                
+        if not resultados:
+            st.warning("Nenhum equipamento foi localizado com essa referência.")
+        else:
+            opcoes_select = {f"{i['codigo_controle']} - {i['tipo']} ({i['colaborador']})": i for i in resultados}
+            escolha = st.selectbox("Selecione o equipamento exato para manipular:", list(opcoes_select.keys()))
+            
+            equip_selecionado = opcoes_select[escolha]
+            st.markdown("---")
+            
+            # Formulário de Edição preenchido
+            with st.form("form_edicao_master"):
+                ed_tipo = st.selectbox("Tipo de Equipamento*", ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"], index=["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"].index(equip_selecionado['tipo']))
+                ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer"], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer"].index(equip_selecionado['marca']))
+                ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
+                ed_colab = st.text_input("Colaborador Responsável*", value=equip_selecionado.get('colaborador') or "")
+                ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
+                ed_status = st.selectbox("Status", ["Ativo", "Baixado"], index=0 if equip_selecionado.get('status') == "Ativo" else 1)
+                
+                # Gerenciamento de Fotos Existentes
+                lista_fotos_atual = equip_selecionado.get("fotos", [])
+                st.write("**Fotos salvas atualmente:**")
+                fotos_para_manter = []
+                
+                if lista_fotos_atual:
+                    cols = st.columns(min(len(lista_fotos_atual), 5))
+                    for i, url_f in enumerate(lista_fotos_atual):
+                        with cols[i % 5]:
+                            st.image(url_f, width=100)
+                            if st.checkbox("Manter foto", value=True, key=f"foto_{i}"):
+                                fotos_para_manter.append(url_f)
+                else:
+                    st.caption("Nenhuma foto cadastrada.")
+                
+                novas_fotos = st.file_uploader("Adicionar Novas Fotos (Máx Total 10 fotos acumuladas)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="novas_fotos_edit")
+                
+                btn_salvar = st.form_submit_button("Atualizar Informações")
+                btn_deletar = st.form_submit_button("🗑️ Excluir Equipamento Permanentemente")
+                
+                if btn_salvar:
+                    if not ed_colab.strip():
+                        st.error("O campo Colaborador Responsável é obrigatório.")
+                    else:
+                        urls_finais = list(fotos_para_manter)
+                        erro_upload = False
+                        
+                        if novas_fotos:
+                            if (len(urls_finais) + len(novas_fotos)) > 10:
+                                st.error("A soma de fotos salvas com as novas excede o limite máximo de 10.")
+                                erro_upload = True
+                            else:
+                                for idx, foto in enumerate(novas_fotos):
+                                    extensao = foto.name.split(".")[-1]
+                                    caminho_storage = f"{equip_selecionado['codigo_controle']}/{equip_selecionado['codigo_controle']}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                                    try:
+                                        supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                                        url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                                        urls_finais.append(url)
+                                    except Exception as e:
+                                        st.error(f"Erro ao subir foto complementar: {e}")
+                                        erro_upload = True
+                                        break
+                        
+                        if not erro_upload:
+                            supabase.table("equipamentos").update({
+                                "tipo": ed_tipo,
+                                "marca": ed_marca,
+                                "modelo": ed_modelo if ed_modelo else None,
+                                "colaborador": ed_colab.strip(),
+                                "descricao": ed_desc if ed_desc else None,
+                                "status": ed_status,
+                                "fotos": urls_finais
+                            }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
+                            
+                            registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]}.')
+                            st.success("Cadastro atualizado com sucesso!")
+                            st.rerun()
+                            
+                if btn_deletar:
+                    supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
+                    registrar_log("Deletar", f'O usuário "{st.session_state.user.email}" deletou o equipamento {equip_selecionado["codigo_controle"]}.')
+                    st.success("Equipamento removido do banco de dados!")
+                    st.rerun()
+
+# --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) ---
+elif menu == "Lista de Equipamentos":
+    st.header("Lista Geral de Equipamentos")
+    
+    # Barra de pesquisa unificada acima do frame
+    pesquisa = st.text_input("Pesquisar na lista (Qualquer referência):")
+    
+    # Coleta de dados com ordenação cronológica crescente (data_registro)
+    res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
+    
+    if res_equip.data:
+        df_completo = pd.DataFrame(res_equip.data)
+        
+        # Filtragem dinâmica local baseada na barra de pesquisa
+        if pesquisa:
+            p_lower = pesquisa.lower()
+            mascara = df_completo.astype(str).apply(lambda x: x.str.lower().str.contains(p_lower)).any(axis=1)
+            df_exibicao = df_completo[mascara]
+        else:
+            df_exibicao = df_completo.copy()
+            
+        # Reorganização e renomeação de colunas essenciais para visualização limpa
+        colunas_ordenadas = [
+            'codigo_controle', 'tipo', 'marca', 'modelo', 'colaborador', 
+            'descricao', 'data_registro', 'criado_por', 'status', 'fotos'
+        ]
+        # Garante a existência das colunas
+        for c in colunas_ordenadas:
+            if c not in df_exibicao.columns:
+                df_exibicao[c] = None
+                
+        df_exibicao = df_exibicao[colunas_ordenadas]
+        
+        st.write(f"Exibindo {len(df_exibicao)} registros:")
+        st.dataframe(df_exibicao, use_container_width=True)
+        
+        # Botões de Extração dispostos lado a lado
+        col_btn1, col_btn2, _ = st.columns([1, 1, 6])
+        with col_btn1:
+            dados_excel = gerar_excel(df_exibicao)
+            st.download_button(label="📥 Extrair em EXCEL", data=dados_excel, file_name="lista_equipamentos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with col_btn2:
+            dados_pdf = gerar_pdf(df_exibicao, "Relação de Equipamentos - Lista Geral")
+            st.download_button(label="📥 Extrair em PDF", data=dados_pdf, file_name="lista_equipamentos.pdf", mime="application/pdf")
+    else:
+        st.info("Nenhum equipamento cadastrado até o momento.")
+
+# --- 4. RELATÓRIOS (Apenas Master) ---
+elif menu == "Relatórios" and st.session_state.user_role == "Master":
+    st.header("Central de Relatórios de Equipamentos")
+    
+    op_relatorio = st.selectbox("Selecione o tipo de relatório desejado:", [
+        "1. Relação de equipamentos cadastrados por período",
+        "2. Relação de equipamentos por usuário específico",
+        "3. Relação consolidada de todos os usuários"
+    ])
+    
+    df_filtrado = pd.DataFrame()
+    titulo_doc = ""
+    
+    if op_relatorio.startswith("1"):
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            d_inicio = st.date_input("Data de Início", date.today())
+        with col_d2:
+            d_fim = st.date_input("Data de Fim", date.today())
+            
+        if st.button("Filtrar Período"):
+            res = supabase.table("equipamentos").select("*").gte("data_registro", str(d_inicio)).lte("data_registro", str(d_fim)).execute()
+            if res.data:
+                df_filtrado = pd.DataFrame(res.data)
+                titulo_doc = f"Equipamentos Cadastrados de {d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}"
+            else:
+                st.warning("Nenhum dado retornado para este período.")
+                
+    elif op_relatorio.startswith("2"):
+        # Busca dinamicamente os colaboradores para preencher a seleção
+        res_colab = supabase.table("equipamentos").select("colaborador").execute()
+        lista_colabs = list(set([item['colaborador'] for item in res_colab.data if item.get('colaborador')])) if res_colab.data else []
+        
+        colab_selecionado = st.selectbox("Selecione o Colaborador Responsável:", lista_colabs)
+        
+        if st.button("Filtrar por Usuário") and colab_selecionado:
+            res = supabase.table("equipamentos").select("*").eq("colaborador", colab_selecionado).execute()
+            if res.data:
+                df_filtrado = pd.DataFrame(res.data)
+                titulo_doc = f"Equipamentos sob Responsabilidade de: {colab_selecionado}"
+            else:
+                st.warning("Nenhum equipamento localizado para este colaborador.")
+                
+    elif op_relatorio.startswith("3"):
+        if st.button("Gerar Relatório Consolidado"):
+            res = supabase.table("equipamentos").select("*").execute()
+            if res.data:
+                df_filtrado = pd.DataFrame(res.data)
+                titulo_doc = "Relatório Geral Consolidado de Equipamentos"
+            else:
+                st.warning("Banco de dados vazio.")
+                
+    # Apresentação do frame filtrado e opções de download
+    if not df_filtrado.empty:
+        st.markdown("---")
+        st.subheader("Prévia dos Resultados Filtrados")
+        st.dataframe(df_filtrado, use_container_width=True)
+        
+        c_down1, c_down2, _ = st.columns([1, 1, 6])
+        with c_down1:
+            ex_data = gerar_excel(df_filtrado)
+            st.download_button("📥 Baixar EXCEL", data=ex_data, file_name="relatorio.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with c_down2:
+            pdf_data = gerar_pdf(df_filtrado, titulo_doc)
+            st.download_button("📥 Baixar PDF", data=pdf_data, file_name="relatorio.pdf", mime="application/pdf")
+
+# --- 5. LOG DE ATIVIDADES (Apenas Master) ---
+elif menu == "Log de Atividades" and st.session_state.user_role == "Master":
+    st.header("Log de Atividades do Sistema")
+    st.caption("Exibe todas as inserções, atualizações e exclusões em tempo real.")
+    
+    # Recupera todos os logs em ordem decrescente
     logs = supabase.table("logs").select("*").order("created_at", desc=True).execute()
-    st.table(logs.data)
+    
+    if logs.data:
+        df_logs = pd.DataFrame(logs.data)
+        # Renomeação visual elegante
+        df_logs = df_logs.rename(columns={
+            "created_at": "Data/Hora Evento",
+            "usuario_email": "Operador",
+            "acao": "Operação",
+            "resumo": "Histórico Detalhado"
+        })
+        if "id" in df_logs.columns:
+            df_logs = df_logs.drop(columns=["id"])
+            
+        st.table(df_logs)
+    else:
+        st.info("Nenhuma atividade registrada nos logs.")
