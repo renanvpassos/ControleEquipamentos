@@ -268,7 +268,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             # Formulário de Edição preenchido
             with st.form("form_edicao_master"):
                 ed_tipo = st.selectbox("Tipo de Equipamento*", ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"], index=["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"].index(equip_selecionado['tipo']))
-                ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC"]], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC"]].index(equip_selecionado['marca']))
+                ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC"], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC"].index(equip_selecionado['marca']))
                 ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
                 ed_colab = st.text_input("Colaborador Responsável*", value=equip_selecionado.get('colaborador') or "")
                 ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
