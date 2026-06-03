@@ -166,7 +166,8 @@ if st.sidebar.button("Sair do Sistema"):
 if menu == "Cadastrar Equipamento":
     st.header("Cadastrar Novo Equipamento")
     
-    with st.form("cadastro_equipamento_form", clear_on_submit=True):
+    # IMPORTANTE: Removemos o clear_on_submit=True para evitar perda de dados dos arquivos no clique
+    with st.form("cadastro_equipamento_form"):
         tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"])
         marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer"])
         modelo = st.text_input("Modelo (Opcional)")
@@ -174,13 +175,14 @@ if menu == "Cadastrar Equipamento":
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
         codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
         
+        # O uploader captura a lista de arquivos aqui
         fotos = st.file_uploader("Fotos do equipamento (Obrigatório - Máx 10 fotos)*", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         if st.form_submit_button("Salvar Cadastro"):
             codigo = codigo_input.strip().upper()
             
             # Validações estruturais obrigatórias
-            if not tipo or not marca or not colaborador.strip() or not codigo or not fotos:
+            if not tipo or not marca or not colaborador.strip() or not codigo or not fotos or len(fotos) == 0:
                 st.error("Por favor, preencha todos os campos obrigatórios (*) e anexe pelo menos uma foto.")
             elif len(fotos) > 10:
                 st.error("Permitido anexar no máximo 10 fotos.")
@@ -193,19 +195,20 @@ if menu == "Cadastrar Equipamento":
                     urls_fotos = []
                     erro_upload = False
                     
-                    # Upload das fotos para o Bucket do Supabase Storage
-                    for idx, foto in enumerate(fotos):
-                        extensao = foto.name.split(".")[-1]
-                        caminho_storage = f"{codigo}/{codigo}_{idx}_{int(datetime.now().timestamp())}.{extensao}"
-                        try:
-                            # Certifique-se de que o bucket 'equipamentos-fotos' esteja criado e público no Supabase
-                            supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                            url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                            urls_fotos.append(url)
-                        except Exception as e:
-                            st.error(f"Falha ao enviar a foto {foto.name}: {e}")
-                            erro_upload = True
-                            break
+                    # Mensagem de progresso visual para o usuário
+                    with st.spinner("Enviando fotos para o servidor..."):
+                        for idx, foto in enumerate(fotos):
+                            extensao = foto.name.split(".")[-1]
+                            caminho_storage = f"{codigo}/{codigo}_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                            try:
+                                # Realiza o upload do binário diretamente
+                                supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                                url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                                urls_fotos.append(url)
+                            except Exception as e:
+                                st.error(f"Falha ao enviar a foto {foto.name}: {e}")
+                                erro_upload = True
+                                break
                     
                     if not erro_upload:
                         # Inserção no banco de dados
@@ -222,11 +225,16 @@ if menu == "Cadastrar Equipamento":
                             "data_registro": str(date.today())
                         }).execute()
                         
-                        # Log estruturado solicitado
+                        # Log estruturado
                         log_msg = f'O usuário: "{st.session_state.user.email}" cadastrou o equipamento: "{tipo}", "Código de controle": {codigo}, "Colaborador Responsável": "{colaborador.strip()}", "Data do cadastro": "{date.today().strftime("%d/%m/%Y")}"'
                         registrar_log("Inserir", log_msg)
                         
                         st.success(f"Equipamento {codigo} cadastrado com sucesso!")
+                        
+                        # Aguarda 2 segundos para o usuário ver a mensagem de sucesso e limpa o form recarregando a página
+                        import time
+                        time.sleep(2)
+                        st.rerun()
 
 # --- 2. EDITAR CADASTRO (Apenas Master) ---
 elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
