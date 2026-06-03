@@ -276,34 +276,36 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                 
                 # Gerenciamento de Fotos Existentes
                 lista_fotos_atual = equip_selecionado.get("fotos", [])
-                st.write("**Fotos salvas atualmente:**")
+                st.write("**Fotos salvas atualmente (Passe o mouse e clique nas setas ⤢ para ver em tamanho real):**")
                 fotos_para_manter = []
                 
                 if lista_fotos_atual:
-                    cols = st.columns(min(len(lista_fotos_atual), 5))
+                    # AJUSTE: Criamos até 10 colunas bem finas para que as fotos fiquem coladas uma na outra
+                    num_colunas = max(len(lista_fotos_atual), 1)
+                    cols = st.columns(10) # Força um grid de até 10 espaços para juntar as imagens
+                    
                     for i, url_f in enumerate(lista_fotos_atual):
-                        with cols[i % 5]:
+                        # Distribui as fotos sequencialmente nas colunas de 0 a 9
+                        with cols[i % 10]:
                             try:
-                                # CORREÇÃO: Extraímos o caminho relativo do arquivo a partir da URL guardada
-                                # Exemplo de URL: .../storage/v1/object/public/equipamentos-fotos/CODIGO/foto.png
-                                # Precisamos apenas de: "CODIGO/foto.png"
                                 if "equipamentos-fotos/" in url_f:
                                     caminho_relativo = url_f.split("equipamentos-fotos/")[-1]
                                 else:
                                     caminho_relativo = url_f
                                 
-                                # Baixa os bytes do arquivo de forma segura e injeta direto no st.image
                                 bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relativo)
-                                st.image(bytes_foto, width=120)
+                                
+                                # AJUSTE: O Streamlit por padrão já adiciona o botão de expandir (Fullscreen) no canto da imagem.
+                                st.image(bytes_foto, use_container_width=True)
                             except Exception:
-                                # Caso falte alguma imagem ou o link quebre, ele tenta exibir o link bruto textualmente
-                                st.caption("⚠️ Erro ao carregar prévia")
+                                st.caption("⚠️ Erro")
                             
-                            if st.checkbox("Manter foto", value=True, key=f"foto_{i}"):
+                            if st.checkbox("Manter", value=True, key=f"foto_{i}"):
                                 fotos_para_manter.append(url_f)
                 else:
                     st.caption("Nenhuma foto cadastrada.")
                 
+                st.markdown("<br>", unsafe_allow_html=True)
                 novas_fotos = st.file_uploader("Adicionar Novas Fotos (Máx Total 10 fotos acumuladas)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="novas_fotos_edit")
                 
                 btn_salvar = st.form_submit_button("Atualizar Informações")
@@ -345,11 +347,10 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                             }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
                             
                             registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]}.')
-                            st.success("Cadastro atualizado com sucesso!")
+                            st.success("Cadastro updated com sucesso!")
                             st.rerun()
                             
                 if btn_deletar:
-                    # Opcional: Você pode deletar a pasta de fotos no Storage aqui se desejar limpar o storage
                     supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
                     registrar_log("Deletar", f'O usuário "{st.session_state.user.email}" deletou o equipamento {equip_selecionado["codigo_controle"]}.')
                     st.success("Equipamento removido do banco de dados!")
