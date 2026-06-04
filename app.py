@@ -169,7 +169,7 @@ if menu == "Cadastrar Equipamento":
     # IMPORTANTE: Removemos o clear_on_submit=True para evitar perda de dados dos arquivos no clique
     with st.form("cadastro_equipamento_form"):
         tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"])
-        marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup"])
+        marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre"])
         modelo = st.text_input("Modelo (Opcional)")
         colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
@@ -268,7 +268,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             # Formulário de Edição preenchido
             with st.form("form_edicao_master"):
                 ed_tipo = st.selectbox("Tipo de Equipamento*", ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"], index=["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"].index(equip_selecionado['tipo']))
-                ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup"], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup"].index(equip_selecionado['marca']))
+                ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre"], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre"].index(equip_selecionado['marca']))
                 ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
                 ed_colab = st.text_input("Colaborador Responsável*", value=equip_selecionado.get('colaborador') or "")
                 ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
