@@ -289,114 +289,168 @@ if menu == "Cadastrar Equipamento":
 # --- 2. EDITAR CADASTRO (Apenas Master) ---
 elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
     st.header("Editar / Remover Cadastro de Equipamento")
-    busca_ref = st.text_input("Buscar equipamento para edição (Digite qualquer referência: Código, Nome, Colaborador, Marca...):")
     
-    if busca_ref:
-        res_busca = supabase.table("equipamentos").select("*").execute()
-        resultados = []
-        ref_lower = busca_ref.lower()
+    # 1. Buscar todos os dados para alimentar os filtros dinâmicos
+    res_busca = supabase.table("equipamentos").select("*").execute()
+    todos_equipamentos = res_busca.data if res_busca.data else []
+    
+    # Criar uma variável para armazenar o equipamento que será editado no final
+    equip_selecionado = None
+
+    # 2. Opção de escolha do método de busca
+    metodo_busca = st.radio("Como deseja localizar o equipamento?", ["Por busca textual", "Por Colaborador/Tipo"])
+
+    # --- MÉTODO 1: BUSCA TEXTUAL ---
+    if metodo_busca == "Por busca textual":
+        busca_ref = st.text_input("Buscar equipamento para edição (Digite qualquer referência: Código, Nome, Colaborador, Marca...):")
         
-        for item in res_busca.data:
-            if (ref_lower in str(item.get("codigo_controle", "")).lower() or
-                ref_lower in str(item.get("tipo", "")).lower() or
-                ref_lower in str(item.get("marca", "")).lower() or
-                ref_lower in str(item.get("modelo", "")).lower() or
-                ref_lower in str(item.get("colaborador", "")).lower()):
-                resultados.append(item)
-                
-        if not resultados:
-            st.warning("Nenhum equipamento foi localizado com essa referência.")
-        else:
-            opcoes_select = {f"{i['codigo_controle']} - {i['tipo']} ({i['colaborador']})": i for i in resultados}
-            escolha = st.selectbox("Selecione o equipamento exato para manipular:", list(opcoes_select.keys()))
-            equip_selecionado = opcoes_select[escolha]
-            st.markdown("---")
+        if busca_ref:
+            resultados = []
+            ref_lower = busca_ref.lower()
             
-            with st.form("form_edicao_master"):
-                ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
+            for item in todos_equipamentos:
+                if (ref_lower in str(item.get("codigo_controle", "")).lower() or
+                    ref_lower in str(item.get("tipo", "")).lower() or
+                    ref_lower in str(item.get("marca", "")).lower() or
+                    ref_lower in str(item.get("modelo", "")).lower() or
+                    ref_lower in str(item.get("colaborador", "")).lower()):
+                    resultados.append(item)
+                    
+            if not resultados:
+                st.warning("Nenhum equipamento foi localizado com essa referência.")
+            else:
+                opcoes_select = {f"{i['codigo_controle']} - {i['tipo']} ({i['colaborador']})": i for i in resultados}
+                escolha = st.selectbox("Selecione o equipamento exato para manipular:", list(opcoes_select.keys()))
+                equip_selecionado = opcoes_select[escolha]
+
+    # --- MÉTODO 2: FILTRO POR COLABORADOR E TIPO ---
+    else:
+        if not todos_equipamentos:
+            st.warning("Nenhum equipamento cadastrado no banco de dados.")
+        else:
+            # Extrair colaboradores únicos (removendo nulos/vazios) e ordenar
+            colaboradores_disponiveis = sorted(list(set([item["colaborador"] for item in todos_equipamentos if item.get("colaborador")])))
+            
+            colab_escolhido = st.selectbox("Selecione o Colaborador:", ["Selecione..."] + colaboradores_disponiveis)
+            
+            if colab_escolhido != "Selecione...":
+                # Filtrar equipamentos do colaborador selecionado
+                equips_do_colab = [item for item in todos_equipamentos if item.get("colaborador") == colab_escolhido]
                 
-                ed_tipo = st.selectbox("Tipo de Equipamento*", ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"], index=["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"].index(equip_selecionado['tipo']))
-                ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"].index(equip_selecionado['marca']))
-                ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
-                ed_colab = st.text_input("Colaborador Responsável*", value=equip_selecionado.get('colaborador') or "")
-                ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
-                ed_status = st.selectbox("Status", ["Ativo", "Baixado"], index=0 if equip_selecionado.get('status') == "Ativo" else 1)
+                # Listar os tipos de equipamentos que ESSE colaborador possui
+                tipos_disponiveis = sorted(list(set([item["tipo"] for item in equips_do_colab if item.get("tipo")])))
                 
-                lista_fotos_atual = equip_selecionado.get("fotos", [])
-                st.write("**Fotos salvas atualmente (Passe o mouse e clique nas setas ⤢ para ver em tamanho real):**")
-                fotos_para_manter = []
+                tipo_escolhido = st.selectbox("Selecione o Tipo de Equipamento:", ["Selecione..."] + tipos_disponiveis)
                 
-                if lista_fotos_atual:
-                    cols = st.columns(10)
-                    for i, url_f in enumerate(lista_fotos_atual):
-                        with cols[i % 10]:
-                            try:
-                                caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
-                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
-                                st.image(bytes_foto, use_container_width=True)
-                            except Exception:
-                                st.caption("⚠️ Erro")
-                            if st.checkbox("Manter", value=True, key=f"foto_{i}"):
-                                fotos_para_manter.append(url_f)
-                else:
-                    st.caption("Nenhuma foto cadastrada.")
-                
-                st.markdown("<br>", unsafe_allow_html=True)
-                novas_fotos = st.file_uploader("Adicionar Novas Fotos (Máx Total 10 fotos acumuladas)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="novas_fotos_edit")
-                
-                btn_salvar = st.form_submit_button("Atualizar Informações")
-                btn_deletar = st.form_submit_button("🗑️ Excluir Equipamento Permanentemente")
-                
-                if btn_salvar:
-                    if not ed_codigo.strip():
-                        st.error("O campo Código do Equipamento é obrigatório.")
-                    elif not ed_colab.strip():
-                        st.error("O campo Colaborador Responsável é obrigatório.")
+                if tipo_escolhido != "Selecione...":
+                    # Filtrar pelo tipo escolhido
+                    equips_finais = [item for item in equips_do_colab if item.get("tipo") == tipo_escolhido]
+                    
+                    # Se houver mais de um equipamento do mesmo tipo para o mesmo colaborador (ex: 2 Monitores)
+                    opcoes_finais = {f"{i['codigo_controle']} - {i['marca']} {i.get('modelo', '')}": i for i in equips_finais}
+                    
+                    if len(opcoes_finais) == 1:
+                        equip_selecionado = list(opcoes_finais.values())[0]
                     else:
-                        urls_finais = list(fotos_para_manter)
-                        erro_upload = False
-                        
-                        if novas_fotos:
-                            if (len(urls_finais) + len(novas_fotos)) > 10:
-                                st.error("A soma de fotos salvas com as novas excede o limite máximo de 10.")
-                                erro_upload = True
-                            else:
-                                for idx, foto in enumerate(novas_fotos):
-                                    extensao = foto.name.split(".")[-1]
-                                    caminho_storage = f"{ed_codigo.strip()}/{ed_codigo.strip()}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
-                                    try:
-                                        supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                                        url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                                        urls_finais.append(url)
-                                    except Exception as e:
-                                        st.error(f"Erro ao subir foto complementar: {e}")
-                                        erro_upload = True
-                                        break
-                        
-                        if not erro_upload:
-                            try:
-                                supabase.table("equipamentos").update({
-                                    "codigo_controle": ed_codigo.strip(),
-                                    "tipo": ed_tipo,
-                                    "marca": ed_marca,
-                                    "modelo": ed_modelo if ed_modelo else None,
-                                    "colaborador": ed_colab.strip(),
-                                    "descricao": ed_desc if ed_desc else None,
-                                    "status": ed_status,
-                                    "fotos": urls_finais
-                                }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
-                                
-                                registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).')
-                                st.success("Cadastro updated com sucesso!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao atualizar no banco de dados. Verifique se este novo código já não está em uso: {e}")
-                                
-                if btn_deletar:
-                    supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
-                    registrar_log("Deletar", f'O usuário "{st.session_state.user.email}" deletou o equipamento {equip_selecionado["codigo_controle"]}.')
-                    st.success("Equipamento removido do banco de dados!")
-                    st.rerun()
+                        escolha_final = st.selectbox("Mais de um equipamento encontrado. Selecione pelo Código/Marca:", list(opcoes_finais.keys()))
+                        equip_selecionado = opcoes_finais[escolha_final]
+
+    # --- 3. FORMULÁRIO DE EDIÇÃO (Executa se um equipamento foi encontrado/selecionado) ---
+    if equip_selecionado:
+        st.markdown("---")
+        
+        with st.form("form_edicao_master"):
+            ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
+            
+            # Validação preventiva caso o tipo/marca não estejam nas listas padrões
+            tipos_padrao = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"]
+            ed_tipo_idx = tipos_padrao.index(equip_selecionado['tipo']) if equip_selecionado['tipo'] in tipos_padrao else 0
+            ed_tipo = st.selectbox("Tipo de Equipamento*", tipos_padrao, index=ed_tipo_idx)
+            
+            marcas_padrao = ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"]
+            ed_marca_idx = marcas_padrao.index(equip_selecionado['marca']) if equip_selecionado['marca'] in marcas_padrao else 0
+            ed_marca = st.selectbox("Marca*", marcas_padrao, index=ed_marca_idx)
+            
+            ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
+            ed_colab = st.text_input("Colaborador Responsável*", value=equip_selecionado.get('colaborador') or "")
+            ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
+            ed_status = st.selectbox("Status", ["Ativo", "Baixado"], index=0 if equip_selecionado.get('status') == "Ativo" else 1)
+            
+            lista_fotos_atual = equip_selecionado.get("fotos", [])
+            st.write("**Fotos salvas atualmente (Passe o mouse e clique nas setas ⤢ para ver em tamanho real):**")
+            fotos_para_manter = []
+            
+            if lista_fotos_atual:
+                cols = st.columns(10)
+                for i, url_f in enumerate(lista_fotos_atual):
+                    with cols[i % 10]:
+                        try:
+                            caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
+                            bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
+                            st.image(bytes_foto, use_container_width=True)
+                        except Exception:
+                            st.caption("⚠️ Erro")
+                        if st.checkbox("Manter", value=True, key=f"foto_{i}"):
+                            fotos_para_manter.append(url_f)
+            else:
+                st.caption("Nenhuma foto cadastrada.")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            novas_fotos = st.file_uploader("Adicionar Novas Fotos (Máx Total 10 fotos acumuladas)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="novas_fotos_edit")
+            
+            btn_salvar = st.form_submit_button("Atualizar Informações")
+            btn_deletar = st.form_submit_button("🗑️ Excluir Equipamento Permanentemente")
+            
+            if btn_salvar:
+                if not ed_codigo.strip():
+                    st.error("O campo Código do Equipamento é obrigatório.")
+                elif not ed_colab.strip():
+                    st.error("O campo Colaborador Responsável é obrigatório.")
+                else:
+                    urls_finais = list(fotos_para_manter)
+                    erro_upload = False
+                    
+                    if novas_fotos:
+                        if (len(urls_finais) + len(novas_fotos)) > 10:
+                            st.error("A soma de fotos salvas com as novas excede o limite máximo de 10.")
+                            erro_upload = True
+                        else:
+                            for idx, foto in enumerate(novas_fotos):
+                                extensao = foto.name.split(".")[-1]
+                                caminho_storage = f"{ed_codigo.strip()}/{ed_codigo.strip()}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                                try:
+                                    supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                                    url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                                    urls_finais.append(url)
+                                except Exception as e:
+                                    st.error(f"Erro ao subir foto complementar: {e}")
+                                    erro_upload = True
+                                    break
+                    
+                    if not erro_upload:
+                        try:
+                            supabase.table("equipamentos").update({
+                                "codigo_controle": ed_codigo.strip(),
+                                "tipo": ed_tipo,
+                                "marca": ed_marca,
+                                "modelo": ed_modelo if ed_modelo else None,
+                                "colaborador": ed_colab.strip(),
+                                "descricao": ed_desc if ed_desc else None,
+                                "status": ed_status,
+                                "fotos": urls_finais
+                            }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
+                            
+                            registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).')
+                            st.success("Cadastro atualizado com sucesso!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao atualizar no banco de dados. Verifique se este novo código já não está em uso: {e}")
+                            
+            if btn_deletar:
+                supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
+                registrar_log("Deletar", f'O usuário "{st.session_state.user.email}" deletou o equipamento {equip_selecionado["codigo_controle"]}.')
+                st.success("Equipamento removido do banco de dados!")
+                st.rerun()
 
 # --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) ---
 elif menu == "Lista de Equipamentos":
