@@ -475,19 +475,28 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             res = supabase.table("equipamentos").select("*").gte("data_registro", str(d_inicio)).lte("data_registro", str(d_fim)).execute()
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
+                # --- ORDENAÇÃO DO RELATÓRIO 1 ---
+                if 'colaborador' in df_filtrado.columns:
+                    df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower(), na_position='last')
                 titulo_doc = f"Equipamentos Cadastrados de {d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}"
             else:
                 st.warning("Nenhum dado retornado para este período.")
                 
     elif op_relatorio.startswith("2"):
         res_colab = supabase.table("equipamentos").select("colaborador").execute()
+        # --- ORDENAÇÃO DA LISTA DO SELECTBOX (Relatório 2) ---
         lista_colabs = list(set([item['colaborador'] for item in res_colab.data if item.get('colaborador')])) if res_colab.data else []
+        lista_colabs = sorted(lista_colabs, key=str.lower) # Garante que a lista do menu fique em ordem A-Z
+        
         colab_selecionado = st.selectbox("Selecione o Colaborador Responsável:", lista_colabs)
         
         if st.button("Filtrar por Usuário") and colab_selecionado:
             res = supabase.table("equipamentos").select("*").eq("colaborador", colab_selecionado).execute()
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
+                # --- ORDENAÇÃO DO DATAFRAME (Relatório 2) ---
+                if 'colaborador' in df_filtrado.columns:
+                    df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower())
                 titulo_doc = f"Equipamentos sob Responsabilidade de: {colab_selecionado}"
             else:
                 st.warning("Nenhum equipamento localizado para este colaborador.")
