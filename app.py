@@ -311,6 +311,9 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             st.markdown("---")
             
             with st.form("form_edicao_master"):
+                # --- NOVO: Campo para editar o Código do Equipamento ---
+                ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
+                
                 ed_tipo = st.selectbox("Tipo de Equipamento*", ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"], index=["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"].index(equip_selecionado['tipo']))
                 ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"].index(equip_selecionado['marca']))
                 ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
@@ -328,7 +331,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                         with cols[i % 10]:
                             try:
                                 caminho_relativo = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
-                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative if 'caminho_relative' in locals() else caminho_relativo)
+                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relativo)
                                 st.image(bytes_foto, use_container_width=True)
                             except Exception:
                                 st.caption("⚠️ Erro")
@@ -344,7 +347,9 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                 btn_deletar = st.form_submit_button("🗑️ Excluir Equipamento Permanentemente")
                 
                 if btn_salvar:
-                    if not ed_colab.strip():
+                    if not ed_codigo.strip():
+                        st.error("O campo Código do Equipamento é obrigatório.")
+                    elif not ed_colab.strip():
                         st.error("O campo Colaborador Responsável é obrigatório.")
                     else:
                         urls_finais = list(fotos_para_manter)
@@ -357,7 +362,8 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                             else:
                                 for idx, foto in enumerate(novas_fotos):
                                     extensao = foto.name.split(".")[-1]
-                                    caminho_storage = f"{equip_selecionado['codigo_controle']}/{equip_selecionado['codigo_controle']}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                                    # Usa o NOVO código (ed_codigo) para organizar a pasta das novas fotos
+                                    caminho_storage = f"{ed_codigo.strip()}/{ed_codigo.strip()}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
                                     try:
                                         supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
                                         url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
@@ -368,20 +374,26 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                                         break
                         
                         if not erro_upload:
-                            supabase.table("equipamentos").update({
-                                "tipo": ed_tipo,
-                                "marca": ed_marca,
-                                "modelo": ed_modelo if ed_modelo else None,
-                                "colaborador": ed_colab.strip(),
-                                "descricao": ed_desc if ed_desc else None,
-                                "status": ed_status,
-                                "fotos": urls_finais
-                            }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
-                            
-                            registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]}.')
-                            st.success("Cadastro updated com sucesso!")
-                            st.rerun()
-                            
+                            try:
+                                # Enviamos o 'ed_codigo' atualizado no dicionário, 
+                                # mas filtramos pelo código ORIGINAL antigo no '.eq()'
+                                supabase.table("equipamentos").update({
+                                    "codigo_controle": ed_codigo.strip(),
+                                    "tipo": ed_tipo,
+                                    "marca": ed_marca,
+                                    "modelo": ed_modelo if ed_modelo else None,
+                                    "colaborador": ed_colab.strip(),
+                                    "descricao": ed_desc if ed_desc else None,
+                                    "status": ed_status,
+                                    "fotos": urls_finais
+                                }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
+                                
+                                registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).')
+                                st.success("Cadastro atualizado com sucesso!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao atualizar no banco de dados. Verifique se este novo código já não está em uso: {e}")
+                                
                 if btn_deletar:
                     supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
                     registrar_log("Deletar", f'O usuário "{st.session_state.user.email}" deletou o equipamento {equip_selecionado["codigo_controle"]}.')
