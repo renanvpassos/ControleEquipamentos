@@ -4,7 +4,7 @@ from datetime import date, datetime
 import pandas as pd
 import io
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 
@@ -72,7 +72,6 @@ if not st.session_state.user:
     st.stop()
 
 # --- Verificação de Permissão Bloqueante ---
-# Se o cargo for 'Nenhum' ou não mapeado, bloqueia o acesso aos menus.
 if not st.session_state.user_role or st.session_state.user_role == "Nenhum":
     st.sidebar.title("Menu")
     st.sidebar.info(f"Usuário: {st.session_state.user.email}")
@@ -113,7 +112,6 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
     story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
     story.append(Spacer(1, 15))
     
-    # Seleção de colunas-chave para não estourar a largura da página PDF
     colunas_pdf = ['codigo_controle', 'tipo', 'marca', 'colaborador', 'status', 'data_registro']
     df_pdf = df[colunas_pdf].copy() if all(c in df.columns for c in colunas_pdf) else df.iloc[:, :6]
     
@@ -123,7 +121,7 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
         row_cells = []
         for val in row.values:
             row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
-        table_data.append(row_cells)
+            table_data.append(row_cells)
     
     t = Table(table_data, repeatRows=1)
     t.setStyle(TableStyle([
@@ -139,8 +137,68 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
     doc.build(story)
     return buffer.getvalue()
 
+
+# --- NOVA FUNÇÃO: GERA APENAS 1 PDF CONSOLIDADO COM 1 PAGINA POR COLABORADOR ---
+def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidado de Equipamentos"):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    story = []
+    
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=colors.HexColor("#1A365D"), spaceAfter=15)
+    colab_style = ParagraphStyle('ColabStyle', parent=styles['Heading2'], fontSize=13, leading=16, textColor=colors.HexColor("#2C5282"), spaceBefore=10, spaceAfter=10)
+    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10)
+    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.white, fontName="Helvetica-Bold")
+    
+    # Colunas selecionadas para o PDF
+    colunas_pdf = ['codigo_controle', 'tipo', 'marca', 'status', 'data_registro']
+    
+    # Agrupa por colaborador sem alterar a ordenação alfabética prévia do Pandas
+    grupos = list(df_ordenado.groupby('colaborador', sort=False))
+    
+    for i, (colaborador, group) in enumerate(grupos):
+        # Título do Relatório Geral e metadados apenas na primeira página
+        if i == 0:
+            story.append(Paragraph(titulo_geral, title_style))
+            story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
+            story.append(Spacer(1, 15))
+            
+        # Nome do Colaborador atual em destaque na página dele
+        story.append(Paragraph(f"Colaborador: {colaborador}", colab_style))
+        story.append(Spacer(1, 5))
+        
+        df_pdf = group[colunas_pdf].copy() if all(c in group.columns for c in colunas_pdf) else group.iloc[:, :5]
+        
+        # Monta a estrutura da tabela do colaborador
+        table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
+        
+        for _, row in df_pdf.iterrows():
+            row_cells = []
+            for val in row.values:
+                row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
+            table_data.append(row_cells)
+            
+        t = Table(table_data, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")),
+            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAFC")]),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
+        ]))
+        story.append(t)
+        
+        # Se não for o último colaborador da lista, insere uma quebra de página
+        if i < len(grupos) - 1:
+            story.append(PageBreak())
+            
+    doc.build(story)
+    return buffer.getvalue()
+
+
 # --- Configuração Dinâmica de Menus baseada no Cargo ---
-# Ordem estipulada: Cadastrar, Editar, Lista, Relatórios, Log.
 opcoes_menu = []
 if st.session_state.user_role in ["Supervisor", "Master"]:
     opcoes_menu.append("Cadastrar Equipamento")
@@ -166,7 +224,6 @@ if st.sidebar.button("Sair do Sistema"):
 if menu == "Cadastrar Equipamento":
     st.header("Cadastrar Novo Equipamento")
     
-    # IMPORTANTE: Removemos o clear_on_submit=True para evitar perda de dados dos arquivos no clique
     with st.form("cadastro_equipamento_form"):
         tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"])
         marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"])
@@ -175,19 +232,16 @@ if menu == "Cadastrar Equipamento":
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
         codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
         
-        # O uploader captura a lista de arquivos aqui
         fotos = st.file_uploader("Fotos do equipamento (Obrigatório - Máx 10 fotos)*", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         if st.form_submit_button("Salvar Cadastro"):
             codigo = codigo_input.strip().upper()
             
-            # Validações estruturais obrigatórias
             if not tipo or not marca or not colaborador.strip() or not codigo or not fotos or len(fotos) == 0:
                 st.error("Por favor, preencha todos os campos obrigatórios (*) e anexe pelo menos uma foto.")
             elif len(fotos) > 10:
                 st.error("Permitido anexar no máximo 10 fotos.")
             else:
-                # Validação de duplicidade
                 check = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
                 if check.data:
                     st.error(f"Já existe um equipamento cadastrado com o código {codigo}.")
@@ -195,13 +249,11 @@ if menu == "Cadastrar Equipamento":
                     urls_fotos = []
                     erro_upload = False
                     
-                    # Mensagem de progresso visual para o usuário
                     with st.spinner("Enviando fotos para o servidor..."):
                         for idx, foto in enumerate(fotos):
                             extensao = foto.name.split(".")[-1]
                             caminho_storage = f"{codigo}/{codigo}_{idx}_{int(datetime.now().timestamp())}.{extensao}"
                             try:
-                                # Realiza o upload do binário diretamente
                                 supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
                                 url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
                                 urls_fotos.append(url)
@@ -211,9 +263,8 @@ if menu == "Cadastrar Equipamento":
                                 break
                     
                     if not erro_upload:
-                        # Inserção no banco de dados
                         supabase.table("equipamentos").insert({
-                            "codigo_controle": codigo,
+                            "codigo_controle": code if 'code' in locals() else codigo,
                             "tipo": tipo,
                             "marca": marca,
                             "modelo": modelo if modelo else None,
@@ -225,13 +276,10 @@ if menu == "Cadastrar Equipamento":
                             "data_registro": str(date.today())
                         }).execute()
                         
-                        # Log estruturado
                         log_msg = f'O usuário: "{st.session_state.user.email}" cadastrou o equipamento: "{tipo}", "Código de controle": {codigo}, "Colaborador Responsável": "{colaborador.strip()}", "Data do cadastro": "{date.today().strftime("%d/%m/%Y")}"'
                         registrar_log("Inserir", log_msg)
                         
                         st.success(f"Equipamento {codigo} cadastrado com sucesso!")
-                        
-                        # Aguarda 2 segundos para o usuário ver a mensagem de sucesso e limpa o form recarregando a página
                         import time
                         time.sleep(2)
                         st.rerun()
@@ -239,11 +287,9 @@ if menu == "Cadastrar Equipamento":
 # --- 2. EDITAR CADASTRO (Apenas Master) ---
 elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
     st.header("Editar / Remover Cadastro de Equipamento")
-    
     busca_ref = st.text_input("Buscar equipamento para edição (Digite qualquer referência: Código, Nome, Colaborador, Marca...):")
     
     if busca_ref:
-        # Busca generalizada nas colunas principais
         res_busca = supabase.table("equipamentos").select("*").execute()
         resultados = []
         ref_lower = busca_ref.lower()
@@ -261,11 +307,9 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
         else:
             opcoes_select = {f"{i['codigo_controle']} - {i['tipo']} ({i['colaborador']})": i for i in resultados}
             escolha = st.selectbox("Selecione o equipamento exato para manipular:", list(opcoes_select.keys()))
-            
             equip_selecionado = opcoes_select[escolha]
             st.markdown("---")
             
-            # Formulário de Edição preenchido
             with st.form("form_edicao_master"):
                 ed_tipo = st.selectbox("Tipo de Equipamento*", ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"], index=["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"].index(equip_selecionado['tipo']))
                 ed_marca = st.selectbox("Marca*", ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"], index=["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"].index(equip_selecionado['marca']))
@@ -274,32 +318,20 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                 ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
                 ed_status = st.selectbox("Status", ["Ativo", "Baixado"], index=0 if equip_selecionado.get('status') == "Ativo" else 1)
                 
-                # Gerenciamento de Fotos Existentes
                 lista_fotos_atual = equip_selecionado.get("fotos", [])
                 st.write("**Fotos salvas atualmente (Passe o mouse e clique nas setas ⤢ para ver em tamanho real):**")
                 fotos_para_manter = []
                 
                 if lista_fotos_atual:
-                    # AJUSTE: Criamos até 10 colunas bem finas para que as fotos fiquem coladas uma na outra
-                    num_colunas = max(len(lista_fotos_atual), 1)
-                    cols = st.columns(10) # Força um grid de até 10 espaços para juntar as imagens
-                    
+                    cols = st.columns(10)
                     for i, url_f in enumerate(lista_fotos_atual):
-                        # Distribui as fotos sequencialmente nas colunas de 0 a 9
                         with cols[i % 10]:
                             try:
-                                if "equipamentos-fotos/" in url_f:
-                                    caminho_relativo = url_f.split("equipamentos-fotos/")[-1]
-                                else:
-                                    caminho_relativo = url_f
-                                
-                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relativo)
-                                
-                                # AJUSTE: O Streamlit por padrão já adiciona o botão de expandir (Fullscreen) no canto da imagem.
+                                caminho_relativo = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
+                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative if 'caminho_relative' in locals() else caminho_relativo)
                                 st.image(bytes_foto, use_container_width=True)
                             except Exception:
                                 st.caption("⚠️ Erro")
-                            
                             if st.checkbox("Manter", value=True, key=f"foto_{i}"):
                                 fotos_para_manter.append(url_f)
                 else:
@@ -359,60 +391,42 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
 # --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) ---
 elif menu == "Lista de Equipamentos":
     st.header("Lista Geral de Equipamentos")
-    
-    # Coleta de dados com ordenação cronológica crescente (data_registro)
     res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
     
     if res_equip.data:
         df_completo = pd.DataFrame(res_equip.data)
-        
-        # --- NOVO: Criação dos filtros lado a lado ---
         col_filtro1, col_filtro2 = st.columns([2, 1])
         
         with col_filtro1:
             pesquisa = st.text_input("Pesquisar na lista (Qualquer referência):")
             
         with col_filtro2:
-            # Extrai colaboradores únicos, remove nulos/vazios e ordena alfabeticamente
             if 'colaborador' in df_completo.columns:
                 lista_colaboradores = df_completo['colaborador'].dropna().unique().tolist()
                 lista_colaboradores = sorted([str(c) for c in lista_colaboradores if str(c).strip() != ""])
             else:
                 lista_colaboradores = []
                 
-            # Adiciona a opção "Todos" no início da lista
             opcoes_colaboradores = ["Todos"] + lista_colaboradores
             colaborador_selecionado = st.selectbox("Filtrar por Colaborador:", options=opcoes_colaboradores)
         
-        # --- Aplicação dos Filtros Dinâmicos ---
         df_exibicao = df_completo.copy()
-        
-        # 1. Filtro por Colaborador (se não for "Todos")
         if colaborador_selecionado != "Todos":
             df_exibicao = df_exibicao[df_exibicao['colaborador'] == colaborador_selecionado]
-        
-        # 2. Filtro por Barra de Pesquisa (acumulativo)
         if pesquisa:
             p_lower = pesquisa.lower()
             mascara = df_exibicao.astype(str).apply(lambda x: x.str.lower().str.contains(p_lower)).any(axis=1)
             df_exibicao = df_exibicao[mascara]
             
-        # Reorganização e renomeação de colunas essenciais para visualização limpa
-        colunas_ordenadas = [
-            'codigo_controle', 'tipo', 'marca', 'modelo', 'colaborador', 
-            'descricao', 'data_registro', 'criado_por', 'status', 'fotos'
-        ]
-        # Garante a existência das colunas
+        colunas_ordenadas = ['codigo_controle', 'tipo', 'marca', 'modelo', 'colaborador', 'descricao', 'data_registro', 'criado_por', 'status', 'fotos']
         for c in colunas_ordenadas:
             if c not in df_exibicao.columns:
                 df_exibicao[c] = None
                 
         df_exibicao = df_exibicao[colunas_ordenadas]
-        
         st.write(f"Exibindo {len(df_exibicao)} registros:")
         st.dataframe(df_exibicao, use_container_width=True)
         
-        # Botões de Extração dispostos lado a lado
         col_btn1, col_btn2, _ = st.columns([1, 1, 6])
         with col_btn1:
             dados_excel = gerar_excel(df_exibicao)
@@ -423,7 +437,8 @@ elif menu == "Lista de Equipamentos":
     else:
         st.info("Nenhum equipamento cadastrado até o momento.")
 
-# --- 4. RELATÓRIOS (Apenas Master) ---
+
+# --- 4. RELATÓRIOS CORRIGIDO (Apenas Master) ---
 elif menu == "Relatórios" and st.session_state.user_role == "Master":
     st.header("Central de Relatórios de Equipamentos")
     
@@ -435,6 +450,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
     
     df_filtrado = pd.DataFrame()
     titulo_doc = ""
+    is_consolidado_pdf = False
     
     if op_relatorio.startswith("1"):
         col_d1, col_d2 = st.columns(2)
@@ -452,10 +468,8 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.warning("Nenhum dado retornado para este período.")
                 
     elif op_relatorio.startswith("2"):
-        # Busca dinamicamente os colaboradores para preencher a seleção
         res_colab = supabase.table("equipamentos").select("colaborador").execute()
         lista_colabs = list(set([item['colaborador'] for item in res_colab.data if item.get('colaborador')])) if res_colab.data else []
-        
         colab_selecionado = st.selectbox("Selecione o Colaborador Responsável:", lista_colabs)
         
         if st.button("Filtrar por Usuário") and colab_selecionado:
@@ -467,60 +481,23 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.warning("Nenhum equipamento localizado para este colaborador.")
                 
     elif op_relatorio.startswith("3"):
-        if st.button("Gerar Relatórios Consolidados por Usuário"):
+        if st.button("Filtrar Todos os Usuários"):
             res = supabase.table("equipamentos").select("*").execute()
-            
             if res.data:
-                # 1. Cria o DataFrame e ordena em ordem alfabética pelo nome do colaborador
-                df_geral = pd.DataFrame(res.data)
+                df_filtrado = pd.DataFrame(res.data)
                 
-                if 'colaborador' in df_geral.columns:
-                    # Remove registros sem colaborador e ordena logicamente
-                    df_geral = df_geral.dropna(subset=['colaborador'])
-                    df_geral = df_geral.sort_values(by='colaborador', key=lambda col: col.str.lower())
-                    
-                    # Biblioteca padrão do Python para criar o arquivo ZIP na memória
-                    import io
-                    import zipfile
-                    
-                    zip_buffer = io.BytesIO()
-                    
-                    # Abre o arquivo ZIP para começar a adicionar os PDFs
-                    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
-                        
-                        # 2. Agrupa por colaborador (já virá ordenado por conta do passo anterior)
-                        for colaborador, group in df_geral.groupby('colaborador'):
-                            
-                            titulo_doc = f"Relatório de Equipamentos - {colaborador}"
-                            
-                            # --- ATENÇÃO: Substitua a linha abaixo pela sua função real de gerar PDF ---
-                            # Ela deve retornar os bytes do PDF (ex: pdf_bytes = sua_funcao(group, titulo_doc))
-                            # Exemplo hipotético usando uma estrutura comum:
-                            # pdf_bytes = exportar_para_pdf(group, titulo_doc)
-                            
-                            # Supondo que sua função retorne bytes, vamos simular aqui:
-                            pdf_bytes = b"Substitua isso pelos bytes do seu PDF gerado para " + colaborador.encode('utf-8')
-                            
-                            # Cria um nome de arquivo limpo para o PDF
-                            nome_arquivo_pdf = f"Relatorio_{colaborador.replace(' ', '_')}.pdf"
-                            
-                            # Adiciona o PDF deste colaborador dentro do ZIP
-                            zip_file.writestr(nome_arquivo_pdf, pdf_bytes)
-                    
-                    # Disponibiliza o arquivo ZIP para download
-                    st.success(f"Relatórios gerados com sucesso para {df_geral['colaborador'].nunique()} colaboradores!")
-                    st.download_button(
-                        label="📥 Baixar Todos os PDFs (.ZIP)",
-                        data=zip_buffer.getvalue(),
-                        file_name="relatorios_colaboradores.zip",
-                        mime="application/zip"
-                    )
+                if 'colaborador' in df_filtrado.columns:
+                    # Aplica ordenação A-Z estrutural antes da exibição e montagem do PDF
+                    df_filtrado = df_filtrado.dropna(subset=['colaborador'])
+                    df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower())
+                    titulo_doc = "Relatório Geral Consolidado de Equipamentos"
+                    is_consolidado_pdf = True  # Ativa flag para chamar a nova função de PDF
                 else:
-                    st.error("A coluna 'colaborador' não foi encontrada no banco de dados.")
+                    st.error("A coluna 'colaborador' não foi encontrada.")
             else:
                 st.warning("Banco de dados vazio.")
                 
-    # Apresentação do frame filtrado e opções de download
+    # Apresentação do frame filtrado e opções dinâmicas de download
     if not df_filtrado.empty:
         st.markdown("---")
         st.subheader("Prévia dos Resultados Filtrados")
@@ -531,20 +508,26 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             ex_data = gerar_excel(df_filtrado)
             st.download_button("📥 Baixar EXCEL", data=ex_data, file_name="relatorio.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         with c_down2:
-            pdf_data = gerar_pdf(df_filtrado, titulo_doc)
-            st.download_button("📥 Baixar PDF", data=pdf_data, file_name="relatorio.pdf", mime="application/pdf")
+            # Seleciona de forma inteligente qual layout de PDF criar
+            if is_consolidado_pdf:
+                pdf_data = gerar_pdf_consolidado(df_filtrado, titulo_doc)
+                nome_arquivo = "relatorio_consolidado_usuarios.pdf"
+            else:
+                pdf_data = gerar_pdf(df_filtrado, titulo_doc)
+                nome_arquivo = "relatorio.pdf"
+                
+            st.download_button("📥 Baixar PDF", data=pdf_data, file_name=nome_arquivo, mime="application/pdf")
+
 
 # --- 5. LOG DE ATIVIDADES (Apenas Master) ---
 elif menu == "Log de Atividades" and st.session_state.user_role == "Master":
     st.header("Log de Atividades do Sistema")
     st.caption("Exibe todas as inserções, atualizações e exclusões em tempo real.")
     
-    # Recupera todos os logs em ordem decrescente
     logs = supabase.table("logs").select("*").order("created_at", desc=True).execute()
     
     if logs.data:
         df_logs = pd.DataFrame(logs.data)
-        # Renomeação visual elegante
         df_logs = df_logs.rename(columns={
             "created_at": "Data/Hora Evento",
             "usuario_email": "Operador",
