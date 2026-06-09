@@ -467,11 +467,56 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.warning("Nenhum equipamento localizado para este colaborador.")
                 
     elif op_relatorio.startswith("3"):
-        if st.button("Gerar Relatório Consolidado"):
+        if st.button("Gerar Relatórios Consolidados por Usuário"):
             res = supabase.table("equipamentos").select("*").execute()
+            
             if res.data:
-                df_filtrado = pd.DataFrame(res.data)
-                titulo_doc = "Relatório Geral Consolidado de Equipamentos"
+                # 1. Cria o DataFrame e ordena em ordem alfabética pelo nome do colaborador
+                df_geral = pd.DataFrame(res.data)
+                
+                if 'colaborador' in df_geral.columns:
+                    # Remove registros sem colaborador e ordena logicamente
+                    df_geral = df_geral.dropna(subset=['colaborador'])
+                    df_geral = df_geral.sort_values(by='colaborador', key=lambda col: col.str.lower())
+                    
+                    # Biblioteca padrão do Python para criar o arquivo ZIP na memória
+                    import io
+                    import zipfile
+                    
+                    zip_buffer = io.BytesIO()
+                    
+                    # Abre o arquivo ZIP para começar a adicionar os PDFs
+                    with zipfile.ZipFile(zip_buffer, "a", zipfile.ZIP_DEFLATED, False) as zip_file:
+                        
+                        # 2. Agrupa por colaborador (já virá ordenado por conta do passo anterior)
+                        for colaborador, group in df_geral.groupby('colaborador'):
+                            
+                            titulo_doc = f"Relatório de Equipamentos - {colaborador}"
+                            
+                            # --- ATENÇÃO: Substitua a linha abaixo pela sua função real de gerar PDF ---
+                            # Ela deve retornar os bytes do PDF (ex: pdf_bytes = sua_funcao(group, titulo_doc))
+                            # Exemplo hipotético usando uma estrutura comum:
+                            # pdf_bytes = exportar_para_pdf(group, titulo_doc)
+                            
+                            # Supondo que sua função retorne bytes, vamos simular aqui:
+                            pdf_bytes = b"Substitua isso pelos bytes do seu PDF gerado para " + colaborador.encode('utf-8')
+                            
+                            # Cria um nome de arquivo limpo para o PDF
+                            nome_arquivo_pdf = f"Relatorio_{colaborador.replace(' ', '_')}.pdf"
+                            
+                            # Adiciona o PDF deste colaborador dentro do ZIP
+                            zip_file.writestr(nome_arquivo_pdf, pdf_bytes)
+                    
+                    # Disponibiliza o arquivo ZIP para download
+                    st.success(f"Relatórios gerados com sucesso para {df_geral['colaborador'].nunique()} colaboradores!")
+                    st.download_button(
+                        label="📥 Baixar Todos os PDFs (.ZIP)",
+                        data=zip_buffer.getvalue(),
+                        file_name="relatorios_colaboradores.zip",
+                        mime="application/zip"
+                    )
+                else:
+                    st.error("A coluna 'colaborador' não foi encontrada no banco de dados.")
             else:
                 st.warning("Banco de dados vazio.")
                 
