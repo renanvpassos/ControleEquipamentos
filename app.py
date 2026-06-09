@@ -121,7 +121,8 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
         row_cells = []
         for val in row.values:
             row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
-            table_data.append(row_cells)
+        # CORREÇÃO: O append foi movido para fora do loop das colunas (recuo ajustado)
+        table_data.append(row_cells)
     
     t = Table(table_data, repeatRows=1)
     t.setStyle(TableStyle([
@@ -176,6 +177,7 @@ def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidad
             row_cells = []
             for val in row.values:
                 row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
+            # CORREÇÃO: O append foi movido para fora do loop das colunas (recuo ajustado)
             table_data.append(row_cells)
             
         t = Table(table_data, repeatRows=1)
@@ -311,7 +313,6 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             st.markdown("---")
             
             with st.form("form_edicao_master"):
-                # --- NOVO: Campo para editar o Código do Equipamento ---
                 ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
                 
                 ed_tipo = st.selectbox("Tipo de Equipamento*", ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"], index=["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"].index(equip_selecionado['tipo']))
@@ -330,8 +331,8 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                     for i, url_f in enumerate(lista_fotos_atual):
                         with cols[i % 10]:
                             try:
-                                caminho_relativo = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
-                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relativo)
+                                caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
+                                bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
                                 st.image(bytes_foto, use_container_width=True)
                             except Exception:
                                 st.caption("⚠️ Erro")
@@ -362,7 +363,6 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                             else:
                                 for idx, foto in enumerate(novas_fotos):
                                     extensao = foto.name.split(".")[-1]
-                                    # Usa o NOVO código (ed_codigo) para organizar a pasta das novas fotos
                                     caminho_storage = f"{ed_codigo.strip()}/{ed_codigo.strip()}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
                                     try:
                                         supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
@@ -375,8 +375,6 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                         
                         if not erro_upload:
                             try:
-                                # Enviamos o 'ed_codigo' atualizado no dicionário, 
-                                # mas filtramos pelo código ORIGINAL antigo no '.eq()'
                                 supabase.table("equipamentos").update({
                                     "codigo_controle": ed_codigo.strip(),
                                     "tipo": ed_tipo,
@@ -389,7 +387,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                                 }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
                                 
                                 registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).')
-                                st.success("Cadastro atualizado com sucesso!")
+                                st.success("Cadastro updated com sucesso!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erro ao atualizar no banco de dados. Verifique se este novo código já não está em uso: {e}")
@@ -476,11 +474,9 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
                 
-                # --- REMOVE DUPLICADOS (Ajuste o 'id' se o identificador for outro, ex: 'num_serie') ---
                 if 'id' in df_filtrado.columns:
                     df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
                 
-                # --- ORDENAÇÃO DO RELATÓRIO 1 ---
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower(), na_position='last')
                 titulo_doc = f"Equipamentos Cadastrados de {d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}"
@@ -489,7 +485,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 
     elif op_relatorio.startswith("2"):
         res_colab = supabase.table("equipamentos").select("colaborador").execute()
-        # --- ORDENAÇÃO DA LISTA DO SELECTBOX ---
         lista_colabs = list(set([item['colaborador'] for item in res_colab.data if item.get('colaborador')])) if res_colab.data else []
         lista_colabs = sorted(lista_colabs, key=str.lower)
         
@@ -500,11 +495,9 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
                 
-                # --- REMOVE DUPLICADOS ---
                 if 'id' in df_filtrado.columns:
                     df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
                 
-                # --- ORDENAÇÃO DO DATAFRAME ---
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower())
                 titulo_doc = f"Equipamentos sob Responsabilidade de: {colab_selecionado}"
@@ -519,7 +512,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.dropna(subset=['colaborador'])
-                    # --- REMOVE DUPLICADOS CASO O CONSOLIDADO TAMBÉM PRECISE NO DATAFRAME ---
                     if 'id' in df_filtrado.columns:
                         df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
                         
