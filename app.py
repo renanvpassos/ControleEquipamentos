@@ -360,22 +360,42 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
 elif menu == "Lista de Equipamentos":
     st.header("Lista Geral de Equipamentos")
     
-    # Barra de pesquisa unificada acima do frame
-    pesquisa = st.text_input("Pesquisar na lista (Qualquer referência):")
-    
     # Coleta de dados com ordenação cronológica crescente (data_registro)
     res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
     
     if res_equip.data:
         df_completo = pd.DataFrame(res_equip.data)
         
-        # Filtragem dinâmica local baseada na barra de pesquisa
+        # --- NOVO: Criação dos filtros lado a lado ---
+        col_filtro1, col_filtro2 = st.columns([2, 1])
+        
+        with col_filtro1:
+            pesquisa = st.text_input("Pesquisar na lista (Qualquer referência):")
+            
+        with col_filtro2:
+            # Extrai colaboradores únicos, remove nulos/vazios e ordena alfabeticamente
+            if 'colaborador' in df_completo.columns:
+                lista_colaboradores = df_completo['colaborador'].dropna().unique().tolist()
+                lista_colaboradores = sorted([str(c) for c in lista_colaboradores if str(c).strip() != ""])
+            else:
+                lista_colaboradores = []
+                
+            # Adiciona a opção "Todos" no início da lista
+            opcoes_colaboradores = ["Todos"] + lista_colaboradores
+            colaborador_selecionado = st.selectbox("Filtrar por Colaborador:", options=opcoes_colaboradores)
+        
+        # --- Aplicação dos Filtros Dinâmicos ---
+        df_exibicao = df_completo.copy()
+        
+        # 1. Filtro por Colaborador (se não for "Todos")
+        if colaborador_selecionado != "Todos":
+            df_exibicao = df_exibicao[df_exibicao['colaborador'] == colaborador_selecionado]
+        
+        # 2. Filtro por Barra de Pesquisa (acumulativo)
         if pesquisa:
             p_lower = pesquisa.lower()
-            mascara = df_completo.astype(str).apply(lambda x: x.str.lower().str.contains(p_lower)).any(axis=1)
-            df_exibicao = df_completo[mascara]
-        else:
-            df_exibicao = df_completo.copy()
+            mascara = df_exibicao.astype(str).apply(lambda x: x.str.lower().str.contains(p_lower)).any(axis=1)
+            df_exibicao = df_exibicao[mascara]
             
         # Reorganização e renomeação de colunas essenciais para visualização limpa
         colunas_ordenadas = [
