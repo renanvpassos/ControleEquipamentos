@@ -475,6 +475,11 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             res = supabase.table("equipamentos").select("*").gte("data_registro", str(d_inicio)).lte("data_registro", str(d_fim)).execute()
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
+                
+                # --- REMOVE DUPLICADOS (Ajuste o 'id' se o identificador for outro, ex: 'num_serie') ---
+                if 'id' in df_filtrado.columns:
+                    df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
+                
                 # --- ORDENAÇÃO DO RELATÓRIO 1 ---
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower(), na_position='last')
@@ -484,9 +489,9 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 
     elif op_relatorio.startswith("2"):
         res_colab = supabase.table("equipamentos").select("colaborador").execute()
-        # --- ORDENAÇÃO DA LISTA DO SELECTBOX (Relatório 2) ---
+        # --- ORDENAÇÃO DA LISTA DO SELECTBOX ---
         lista_colabs = list(set([item['colaborador'] for item in res_colab.data if item.get('colaborador')])) if res_colab.data else []
-        lista_colabs = sorted(lista_colabs, key=str.lower) # Garante que a lista do menu fique em ordem A-Z
+        lista_colabs = sorted(lista_colabs, key=str.lower)
         
         colab_selecionado = st.selectbox("Selecione o Colaborador Responsável:", lista_colabs)
         
@@ -494,7 +499,12 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             res = supabase.table("equipamentos").select("*").eq("colaborador", colab_selecionado).execute()
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
-                # --- ORDENAÇÃO DO DATAFRAME (Relatório 2) ---
+                
+                # --- REMOVE DUPLICADOS ---
+                if 'id' in df_filtrado.columns:
+                    df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
+                
+                # --- ORDENAÇÃO DO DATAFRAME ---
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower())
                 titulo_doc = f"Equipamentos sob Responsabilidade de: {colab_selecionado}"
@@ -508,11 +518,14 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 df_filtrado = pd.DataFrame(res.data)
                 
                 if 'colaborador' in df_filtrado.columns:
-                    # Aplica ordenação A-Z estrutural antes da exibição e montagem do PDF
                     df_filtrado = df_filtrado.dropna(subset=['colaborador'])
+                    # --- REMOVE DUPLICADOS CASO O CONSOLIDADO TAMBÉM PRECISE NO DATAFRAME ---
+                    if 'id' in df_filtrado.columns:
+                        df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
+                        
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower())
                     titulo_doc = "Relatório Geral Consolidado de Equipamentos"
-                    is_consolidado_pdf = True  # Ativa flag para chamar a nova função de PDF
+                    is_consolidado_pdf = True  
                 else:
                     st.error("A coluna 'colaborador' não foi encontrada.")
             else:
@@ -529,7 +542,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             ex_data = gerar_excel(df_filtrado)
             st.download_button("📥 Baixar EXCEL", data=ex_data, file_name="relatorio.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         with c_down2:
-            # Seleciona de forma inteligente qual layout de PDF criar
             if is_consolidado_pdf:
                 pdf_data = gerar_pdf_consolidado(df_filtrado, titulo_doc)
                 nome_arquivo = "relatorio_consolidado_usuarios.pdf"
