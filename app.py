@@ -319,6 +319,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             
             for item in todos_equipamentos:
                 if (ref_lower in str(item.get("codigo_controle", "")).lower() or
+                    ref_lower in str(item.get("service_tag", "")).lower() or
                     ref_lower in str(item.get("tipo", "")).lower() or
                     ref_lower in str(item.get("marca", "")).lower() or
                     ref_lower in str(item.get("modelo", "")).lower() or
