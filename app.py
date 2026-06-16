@@ -112,7 +112,7 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
     story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
     story.append(Spacer(1, 15))
     
-    colunas_pdf = ['codigo_controle', 'tipo', 'marca', 'colaborador', 'status', 'data_registro']
+    colunas_pdf = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'colaborador', 'status', 'data_registro']
     df_pdf = df[colunas_pdf].copy() if all(c in df.columns for c in colunas_pdf) else df.iloc[:, :6]
     
     table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
