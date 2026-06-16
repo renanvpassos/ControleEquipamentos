@@ -113,7 +113,13 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
     story.append(Spacer(1, 15))
     
     colunas_pdf = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'colaborador', 'status', 'data_registro']
-    df_pdf = df[colunas_pdf].copy() if all(c in df.columns for c in colunas_pdf) else df.iloc[:, :6]
+    
+    colunas_existentes = [c for c in colunas_pdf if c in df.columns]
+    
+    if len(colunas_existentes) < len(colunas_pdf):
+        st.warning(f"Algumas colunas não foram encontradas: {set(colunas_pdf) - set(colunas_existentes)}")
+        
+    df_pdf = df[colunas_existentes].copy()
     
     table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
     
