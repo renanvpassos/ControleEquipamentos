@@ -158,7 +158,7 @@ def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidad
     header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.white, fontName="Helvetica-Bold")
     
     # Colunas selecionadas para o PDF
-    colunas_pdf = ['codigo_controle', 'tipo', 'marca', 'status', 'data_registro']
+    colunas_pdf = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'status', 'data_registro']
     
     # Agrupa por colaborador sem alterar a ordenação alfabética prévia do Pandas
     grupos = list(df_ordenado.groupby('colaborador', sort=False))
@@ -174,7 +174,7 @@ def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidad
         story.append(Paragraph(f"Colaborador: {colaborador}", colab_style))
         story.append(Spacer(1, 5))
         
-        df_pdf = group[colunas_pdf].copy() if all(c in group.columns for c in colunas_pdf) else group.iloc[:, :5]
+        df_pdf = group[colunas_pdf].copy() if all(c in group.columns for c in colunas_pdf) else group.iloc[:, :6]
         
         # Monta a estrutura da tabela do colaborador
         table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
