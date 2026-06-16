@@ -494,7 +494,7 @@ elif menu == "Lista de Equipamentos":
             mascara = df_exibicao.astype(str).apply(lambda x: x.str.lower().str.contains(p_lower)).any(axis=1)
             df_exibicao = df_exibicao[mascara]
             
-        colunas_ordenadas = ['codigo_controle', 'tipo', 'marca', 'modelo', 'colaborador', 'descricao', 'data_registro', 'criado_por', 'status', 'fotos']
+        colunas_ordenadas = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'modelo', 'colaborador', 'descricao', 'data_registro', 'criado_por', 'status', 'fotos']
         for c in colunas_ordenadas:
             if c not in df_exibicao.columns:
                 df_exibicao[c] = None
