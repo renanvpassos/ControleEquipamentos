@@ -371,6 +371,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
         
         with st.form("form_edicao_master"):
             ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
+            ed_st = st.text_input("Service Tag", value=str(equip_selecionado.get('service_tag') or ""))
             
             # Validação preventiva caso o tipo/marca não estejam nas listas padrões
             tipos_padrao = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"]
@@ -441,6 +442,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                         try:
                             supabase.table("equipamentos").update({
                                 "codigo_controle": ed_codigo.strip(),
+                                "service_tag": ed_st.strip(),
                                 "tipo": ed_tipo,
                                 "marca": ed_marca,
                                 "modelo": ed_modelo if ed_modelo else None,
