@@ -232,14 +232,22 @@ if menu == "Cadastrar Equipamento":
         modelo = st.text_input("Modelo (Opcional)")
         colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
-        codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
+        
+        # Criando colunas para colocar os campos lado a lado
+        col1, col2 = st.columns(2)
+        with col1:
+            codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
+        with col2:
+            service_tag_input = st.text_input("Service Tag (Obrigatório)*")
         
         fotos = st.file_uploader("Fotos do equipamento (Obrigatório - Máx 10 fotos)*", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         if st.form_submit_button("Salvar Cadastro"):
             codigo = codigo_input.strip().upper()
+            service_tag = service_tag_input.strip().upper() # Padronizando também a Service Tag
             
-            if not tipo or not marca or not colaborador.strip() or not codigo or not fotos or len(fotos) == 0:
+            # Adicionado service_tag na validação
+            if not tipo or not marca or not colaborador.strip() or not codigo or not service_tag or not fotos or len(fotos) == 0:
                 st.error("Por favor, preencha todos os campos obrigatórios (*) e anexe pelo menos uma foto.")
             elif len(fotos) > 10:
                 st.error("Permitido anexar no máximo 10 fotos.")
@@ -266,7 +274,8 @@ if menu == "Cadastrar Equipamento":
                     
                     if not erro_upload:
                         supabase.table("equipamentos").insert({
-                            "codigo_controle": code if 'code' in locals() else codigo,
+                            "codigo_controle": codigo,
+                            "service_tag": service_tag, # Adicionado campo para o Supabase
                             "tipo": tipo,
                             "marca": marca,
                             "modelo": modelo if modelo else None,
@@ -278,10 +287,10 @@ if menu == "Cadastrar Equipamento":
                             "data_registro": str(date.today())
                         }).execute()
                         
-                        log_msg = f'O usuário: "{st.session_state.user.email}" cadastrou o equipamento: "{tipo}", "Código de controle": {codigo}, "Colaborador Responsável": "{colaborador.strip()}", "Data do cadastro": "{date.today().strftime("%d/%m/%Y")}"'
+                        log_msg = f'O usuário: "{st.session_state.user.email}" cadastrou o equipamento: "{tipo}", "Código": {codigo}, "Service Tag": {service_tag}, "Colaborador": "{colaborador.strip()}"'
                         registrar_log("Inserir", log_msg)
                         
-                        st.success(f"Equipamento {codigo} cadastrado com sucesso!")
+                        st.success(f"Equipamento {codigo} (ST: {service_tag}) cadastrado com sucesso!")
                         import time
                         time.sleep(2)
                         st.rerun()
