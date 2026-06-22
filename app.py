@@ -380,7 +380,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             ed_st = st.text_input("Service Tag", value=str(equip_selecionado.get('service_tag') or ""))
             
             # Validação preventiva caso o tipo/marca não estejam nas listas padrões
-            tipos_padrao = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"]
+            tipos_padrao = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
             ed_tipo_idx = tipos_padrao.index(equip_selecionado['tipo']) if equip_selecionado['tipo'] in tipos_padrao else 0
             ed_tipo = st.selectbox("Tipo de Equipamento*", tipos_padrao, index=ed_tipo_idx)
             
