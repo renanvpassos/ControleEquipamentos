@@ -258,13 +258,17 @@ if menu == "Cadastrar Equipamento":
             elif len(fotos) > 10:
                 st.error("Permitido anexar no máximo 10 fotos.")
             else:
-                check = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
-                if check.data:
+                check_codigo = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
+                check_service_tag = supabase.table("equipamentos").select("id").eq("service_tag", service_tag).execute()
+                
+                if check_codigo.data:
                     st.error(f"Já existe um equipamento cadastrado com o código {codigo}.")
+                elif check_service_tag.data:
+                    st.error(f"Já existe um equipamento cadastrado com a Service Tag {service_tag}.")
                 else:
                     urls_fotos = []
                     erro_upload = False
-                    
+                
                     with st.spinner("Enviando fotos para o servidor..."):
                         for idx, foto in enumerate(fotos):
                             extensao = foto.name.split(".")[-1]
