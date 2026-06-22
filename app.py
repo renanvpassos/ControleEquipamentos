@@ -233,7 +233,7 @@ if menu == "Cadastrar Equipamento":
     st.header("Cadastrar Novo Equipamento")
     
     with st.form("cadastro_equipamento_form"):
-        tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi"])
+        tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"])
         marca = st.selectbox("Marca (Obrigatório)*", ["", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips"])
         modelo = st.text_input("Modelo (Opcional)")
         colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
