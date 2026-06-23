@@ -433,7 +433,7 @@ if st.session_state.user_role == "Master":
     opcoes_menu.append("Editar Cadastro")
 if st.session_state.user_role in ["Supervisor", "Master"]:
     opcoes_menu.append("Lista de Equipamentos")
-    opcoes_menu.append("Baixas")  # Novo Menu Adicionado
+    opcoes_menu.append("Baixas")
 if st.session_state.user_role == "Master":
     opcoes_menu.append("Relatórios")
     opcoes_menu.append("Log de Atividades")
@@ -796,7 +796,14 @@ elif menu == "Lista de Equipamentos":
 
                     for col, (_, item) in zip(cols, df_pagina.iloc[i:i + 4].iterrows()):
                         with col:
+                            status_atual = item.get('status') or '-'
+                            is_inativo = str(status_atual).lower() == "inativo"
+                            
                             with st.container(border=True):
+                                # CORREÇÃO SOLICITADA: Se o equipamento estiver Inativo, aplica opacidade/transparência em todo o card
+                                if is_inativo:
+                                    st.markdown("<div style='opacity: 0.55; filter: grayscale(20%);'>", unsafe_allow_html=True)
+                                
                                 codigo_card = str(item.get("codigo_controle") or "sem_codigo").replace(" ", "_").replace("/", "_")
                                 fotos = obter_lista_fotos(item.get("fotos"))
 
@@ -821,9 +828,8 @@ elif menu == "Lista de Equipamentos":
                                 st.markdown(f"**Service Tag:** {item.get('service_tag') or '-'}")
                                 st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
                                 
-                                # CORREÇÃO DE ESTILO SOLICITADA: Status Inativo com fonte em Vermelho
-                                status_atual = item.get('status') or '-'
-                                if str(status_atual).lower() == "inativo":
+                                # Status Inativo com fonte em Vermelho em negrito
+                                if is_inativo:
                                     st.markdown(f"**Status:** <span style='color:red; font-weight:bold;'>{status_atual}</span>", unsafe_allow_html=True)
                                 else:
                                     st.markdown(f"**Status:** {status_atual}")
@@ -831,6 +837,9 @@ elif menu == "Lista de Equipamentos":
                                 descricao = item.get("descricao")
                                 if descricao and str(descricao).strip() not in ["", "None", "nan"]:
                                     st.caption(str(descricao))
+                                    
+                                if is_inativo:
+                                    st.markdown("</div>", unsafe_allow_html=True)
 
                 col_btn1, col_btn2, _ = st.columns([1, 1, 6])
 
@@ -854,17 +863,15 @@ elif menu == "Lista de Equipamentos":
     else:
         st.info("Nenhum equipamento cadastrado ate o momento.")
 
-# --- 4. NOVO MENU: BAIXAS (Supervisor e Master) ---
+# --- 4. MENU: BAIXAS (Supervisor e Master) ---
 elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]:
     st.header("Gerenciamento de Baixas de Equipamentos")
     
-    # Abas internas para separação lógica de visualização e ação
     tab_listar, tab_nova = st.tabs(["Pesquisar Baixas", "➕ Nova Baixa"])
     
     with tab_listar:
         pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
         
-        # Carrega dados das baixas
         res_baixas = supabase.table("baixas").select("*").order("data_baixa", desc=True).execute()
         
         if res_baixas.data:
@@ -887,28 +894,22 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
     with tab_nova:
         st.subheader("Registrar Nova Baixa")
         
-        # Busca equipamentos ativos para popular o selectbox de forma limpa
         res_equips_ativos = supabase.table("equipamentos").select("service_tag", "tipo", "colaborador").eq("status", "Ativo").execute()
         
         if not res_equips_ativos.data:
             st.warning("Não há equipamentos ativos cadastrados disponíveis para baixa.")
         else:
-            # Estrutura dicionário blindando contra chaves nulas ou inválidas
             lista_ativos = res_equips_ativos.data
             dict_equips = {}
             
             for item in lista_ativos:
                 st_val = item.get("service_tag")
-                # Garante que a service_tag exista e não seja apenas espaços em branco
                 if st_val and str(st_val).strip():
                     dict_equips[str(st_val).strip().upper()] = item
                     
-            # Agora a ordenação é 100% segura pois só contém strings válidas
             opcoes_st = ["Selecione..."] + sorted(list(dict_equips.keys()))
-            
             st_selecionada = st.selectbox("Selecione a Service Tag (Obrigatório)*", options=opcoes_st)
             
-            # Caixa de visualização com a Prévia solicitada
             if st_selecionada != "Selecione...":
                 dados_prev = dict_equips[st_selecionada]
                 st.info(f"**Prévia do Equipamento:**\n* **Tipo:** {dados_prev['tipo']}\n* **Colaborador Responsável:** {dados_prev['colaborador']}")
@@ -943,7 +944,6 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         
                         if not erro_upload_baixa:
                             try:
-                                # 1. Registra o histórico na tabela de baixas
                                 supabase.table("baixas").insert({
                                     "service_tag": st_selecionada,
                                     "motivo": motivo,
@@ -952,10 +952,7 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                     "criado_por": st.session_state.user.email
                                 }).execute()
                                 
-                                # 2. Atualiza o status do equipamento original para Inativo
                                 supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
-                                
-                                # 3. Registra nos logs globais do sistema
                                 registrar_log("Baixa", f'O usuário "{st.session_state.user.email}" deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
                                 
                                 st.success(f"Baixa efetuada e equipamento (ST: {st_selecionada}) definido como Inativo com sucesso!")
