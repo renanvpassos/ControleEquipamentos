@@ -991,15 +991,17 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
     with tab_nova:
         st.subheader("Registrar Nova Baixa")
         
-        res_equips_ativos = supabase.table("equipamentos").select("service_tag", "tipo", "colaborador").eq("status", "Ativo").execute()
+        # Mantemos a busca trazendo todos os equipamentos para que, caso dê algum erro, o usuário possa visualizar,
+        # mas no selectbox exibiremos as opções disponíveis.
+        res_equips_todos = supabase.table("equipamentos").select("service_tag", "tipo", "colaborador", "status").execute()
         
-        if not res_equips_ativos.data:
-            st.warning("Não há equipamentos ativos cadastrados disponíveis para baixa.")
+        if not res_equips_todos.data:
+            st.warning("Não há equipamentos cadastrados disponíveis para baixa.")
         else:
-            lista_ativos = res_equips_ativos.data
+            lista_equips = res_equips_todos.data
             dict_equips = {}
             
-            for item in lista_ativos:
+            for item in lista_equips:
                 st_val = item.get("service_tag")
                 if st_val and str(st_val).strip():
                     dict_equips[str(st_val).strip().upper()] = item
@@ -1009,7 +1011,8 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
             
             if st_selecionada != "Selecione...":
                 dados_prev = dict_equips[st_selecionada]
-                st.info(f"**Prévia do Equipamento:**\n* **Tipo:** {dados_prev['tipo']}\n* **Colaborador Responsável:** {dados_prev['colaborador']}")
+                cor_status = "green" if dados_prev['status'] == "Ativo" else "red"
+                st.info(f"**Prévia do Equipamento:**\n* **Tipo:** {dados_prev['tipo']}\n* **Colaborador Responsável:** {dados_prev['colaborador']}\n* **Status Atual:** :{cor_status}[{dados_prev['status']}]")
             
             with st.form("form_registro_baixa", clear_on_submit=True):
                 motivo = st.selectbox("Selecione o motivo da baixa (Obrigatório)*", ["", "manutenção", "descarte", "troca"])
@@ -1023,12 +1026,12 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         st.error("Permitido anexar no máximo 10 fotos.")
                     else:
                         # -----------------------------------------------------------------
-                        # VALIDAÇÃO CRÍTICA: IMPEDIR SERVICE_TAG DUPLICADA EM BAIXAS EM ABERTO
+                        # VALIDAÇÃO DIRETA E EXATA: BLOQUEIA APENAS SE ESTIVER INATIVO NO BANCO
                         # -----------------------------------------------------------------
-                        checar_duplicado = supabase.table("baixas").select("id").eq("service_tag", st_selecionada).eq("arquivado", False).execute()
+                        status_atual = dict_equips[st_selecionada].get("status")
                         
-                        if checar_duplicado.data:
-                            st.error(f"⚠️ O equipamento {st_selecionada} já possui uma baixa em andamento! Resolva a baixa anterior antes de abrir uma nova.")
+                        if status_atual == "Inativo":
+                            st.error(f"⚠️ O equipamento {st_selecionada} já está Inativo! Resolva a baixa anterior (reative o equipamento) antes de abrir uma nova.")
                         else:
                             urls_fotos_baixa = []
                             erro_upload_baixa = False
@@ -1055,9 +1058,10 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                         "observacao": observacao if observacao else None,
                                         "fotos": urls_fotos_baixa,
                                         "criado_por": st.session_state.user.email,
-                                        "arquivado": False # Garante que entra visível
+                                        "arquivado": False
                                     }).execute()
                                     
+                                    # Altera para Inativo
                                     supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
                                     registrar_log("Baixa", f'O usuário "{st.session_state.user.email}" deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
                                     
