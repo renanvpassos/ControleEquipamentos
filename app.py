@@ -940,13 +940,40 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                             if linha.get('observacao'):
                                 st.markdown(f"**Observação:** *{linha['observacao']}*")
                         
-                        # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO ---
+                        # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO + AÇÃO MASTER ---
                         with col_dados_equip:
                             st.markdown("**Dados do Equipamento**") 
                             if dados_equip:
                                 st.markdown(f"**Tipo:** {dados_equip.get('tipo', 'N/A')}")
                                 st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
                                 st.markdown(f"**Status:** {dados_equip.get('status', 'N/A')}")
+                                
+                                # ---------------------------------------------------------
+                                # NOVA FUNÇÃO: REATIVAR EXCLUSIVA PARA O CARGO "MASTER"
+                                # ---------------------------------------------------------
+                                if st.session_state.user_role == "Master":
+                                    st.markdown("---")
+                                    # Chave única baseada no ID da baixa para evitar conflitos no Streamlit
+                                    if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
+                                        with st.spinner("Reativando equipamento..."):
+                                            try:
+                                                # 1. Atualiza o status do equipamento para Ativo novamente
+                                                supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
+                                                
+                                                # 2. Remove o registro da tabela de baixas
+                                                supabase.table("baixas").delete().eq("id", id_baixa).execute()
+                                                
+                                                # 3. Registra a ação no Log do sistema
+                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" reativou o equipamento ST: {st_atual} resolvendo a baixa.')
+                                                
+                                                st.success(f"Equipamento {st_atual} reativado com sucesso!")
+                                                import time
+                                                time.sleep(1.5)
+                                                st.rerun()
+                                            except Exception as e:
+                                                st.error(f"Erro ao reativar equipamento: {e}")
+                                # ---------------------------------------------------------
+                                
                             else:
                                 st.caption("Equipamento não localizado no banco.")
         else:
