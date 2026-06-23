@@ -478,51 +478,112 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
 elif menu == "Lista de Equipamentos":
     st.header("Lista Geral de Equipamentos")
     res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
-    
+
     if res_equip.data:
         df_completo = pd.DataFrame(res_equip.data)
+
         col_filtro1, col_filtro2 = st.columns([2, 1])
-        
+
         with col_filtro1:
             pesquisa = st.text_input("Pesquisar na lista (Qualquer referência):")
-            
+
         with col_filtro2:
-            if 'colaborador' in df_completo.columns:
-                lista_colaboradores = df_completo['colaborador'].dropna().unique().tolist()
+            if "colaborador" in df_completo.columns:
+                lista_colaboradores = df_completo["colaborador"].dropna().unique().tolist()
                 lista_colaboradores = sorted([str(c) for c in lista_colaboradores if str(c).strip() != ""])
             else:
                 lista_colaboradores = []
-                
+
             opcoes_colaboradores = ["Todos"] + lista_colaboradores
             colaborador_selecionado = st.selectbox("Filtrar por Colaborador:", options=opcoes_colaboradores)
-        
+
+        filtro_ativo = bool(pesquisa) or colaborador_selecionado != "Todos"
+
         df_exibicao = df_completo.copy()
+
         if colaborador_selecionado != "Todos":
-            df_exibicao = df_exibicao[df_exibicao['colaborador'] == colaborador_selecionado]
+            df_exibicao = df_exibicao[df_exibicao["colaborador"] == colaborador_selecionado]
+
         if pesquisa:
             p_lower = pesquisa.lower()
-            mascara = df_exibicao.astype(str).apply(lambda x: x.str.lower().str.contains(p_lower)).any(axis=1)
+            mascara = df_exibicao.astype(str).apply(
+                lambda x: x.str.lower().str.contains(p_lower, na=False)
+            ).any(axis=1)
             df_exibicao = df_exibicao[mascara]
-            
-        colunas_ordenadas = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'modelo', 'colaborador', 'descricao', 'data_registro', 'criado_por', 'status', 'fotos']
+
+        colunas_ordenadas = [
+            "codigo_controle",
+            "service_tag",
+            "tipo",
+            "marca",
+            "modelo",
+            "colaborador",
+            "descricao",
+            "data_registro",
+            "criado_por",
+            "status",
+            "fotos",
+        ]
+
         for c in colunas_ordenadas:
             if c not in df_exibicao.columns:
                 df_exibicao[c] = None
-                
+
         df_exibicao = df_exibicao[colunas_ordenadas]
-        st.write(f"Exibindo {len(df_exibicao)} registros:")
-        st.dataframe(df_exibicao, use_container_width=True)
-        
-        col_btn1, col_btn2, _ = st.columns([1, 1, 6])
-        with col_btn1:
-            dados_excel = gerar_excel(df_exibicao)
-            st.download_button(label="📥 Extrair em EXCEL", data=dados_excel, file_name="lista_equipamentos.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        with col_btn2:
-            dados_pdf = gerar_pdf(df_exibicao, "Relação de Equipamentos - Lista Geral")
-            st.download_button(label="📥 Extrair em PDF", data=dados_pdf, file_name="lista_equipamentos.pdf", mime="application/pdf")
+
+        if not filtro_ativo:
+            st.info("Use a barra de pesquisa ou o filtro de colaborador para visualizar os equipamentos.")
+        else:
+            st.write(f"Exibindo {len(df_exibicao)} registros:")
+
+            if df_exibicao.empty:
+                st.warning("Nenhum equipamento encontrado com os filtros informados.")
+            else:
+                for i in range(0, len(df_exibicao), 3):
+                    cols = st.columns(3)
+
+                    for col, (_, item) in zip(cols, df_exibicao.iloc[i:i + 3].iterrows()):
+                        with col:
+                            with st.container(border=True):
+                                foto = item.get("fotos")
+
+                                if foto and str(foto).strip() not in ["", "None", "nan"]:
+                                    st.image(foto, use_container_width=True)
+                                else:
+                                    st.info("Sem foto cadastrada")
+
+                                st.markdown(f"**Código:** {item.get('codigo_controle') or '-'}")
+                                st.markdown(f"**Tipo:** {item.get('tipo') or '-'}")
+                                st.markdown(f"**Marca/Modelo:** {item.get('marca') or '-'} / {item.get('modelo') or '-'}")
+                                st.markdown(f"**Service Tag:** {item.get('service_tag') or '-'}")
+                                st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
+                                st.markdown(f"**Status:** {item.get('status') or '-'}")
+
+                                descricao = item.get("descricao")
+                                if descricao and str(descricao).strip() not in ["", "None", "nan"]:
+                                    st.caption(str(descricao))
+
+                col_btn1, col_btn2, _ = st.columns([1, 1, 6])
+
+                with col_btn1:
+                    dados_excel = gerar_excel(df_exibicao)
+                    st.download_button(
+                        label="📥 Extrair em EXCEL",
+                        data=dados_excel,
+                        file_name="lista_equipamentos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+
+                with col_btn2:
+                    dados_pdf = gerar_pdf(df_exibicao, "Relação de Equipamentos - Lista Geral")
+                    st.download_button(
+                        label="📥 Extrair em PDF",
+                        data=dados_pdf,
+                        file_name="lista_equipamentos.pdf",
+                        mime="application/pdf",
+                    )
     else:
         st.info("Nenhum equipamento cadastrado até o momento.")
-
 
 # --- 4. RELATÓRIOS CORRIGIDO (Apenas Master) ---
 elif menu == "Relatórios" and st.session_state.user_role == "Master":
