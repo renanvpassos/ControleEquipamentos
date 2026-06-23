@@ -708,175 +708,173 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                 st.success("Equipamento removido do banco de dados!")
                 st.rerun()
 
+# --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) ---
+elif menu == "Lista de Equipamentos":
+    st.header("Lista Geral de Equipamentos")
+    res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
 
+    if res_equip.data:
+        df_completo = pd.DataFrame(res_equip.data)
 
-        # --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) ---
-        elif menu == "Lista de Equipamentos":
-            st.header("Lista Geral de Equipamentos")
-            res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
-        
-            if res_equip.data:
-                df_completo = pd.DataFrame(res_equip.data)
-        
-                col_filtro1, col_filtro2 = st.columns([2, 1])
-        
-                with col_filtro1:
-                    pesquisa = st.text_input("Pesquisar na lista (Qualquer referencia):")
-        
-                with col_filtro2:
-                    if "colaborador" in df_completo.columns:
-                        lista_colaboradores = df_completo["colaborador"].dropna().unique().tolist()
-                        lista_colaboradores = sorted([str(c) for c in lista_colaboradores if str(c).strip() != ""])
-                    else:
-                        lista_colaboradores = []
-        
-                    opcoes_colaboradores = ["Todos"] + lista_colaboradores
-                    colaborador_selecionado = st.selectbox("Filtrar por Colaborador:", options=opcoes_colaboradores)
-        
-                filtro_ativo = bool(pesquisa) or colaborador_selecionado != "Todos"
-        
-                df_exibicao = df_completo.copy()
-        
-                if colaborador_selecionado != "Todos":
-                    df_exibicao = df_exibicao[df_exibicao["colaborador"] == colaborador_selecionado]
-        
-                if pesquisa:
-                    p_lower = pesquisa.lower()
-                    mascara = df_exibicao.astype(str).apply(
-                        lambda x: x.str.lower().str.contains(p_lower, na=False)
-                    ).any(axis=1)
-                    df_exibicao = df_exibicao[mascara]
-        
-                colunas_ordenadas = [
-                    "codigo_controle",
-                    "service_tag",
-                    "tipo",
-                    "marca",
-                    "modelo",
-                    "colaborador",
-                    "descricao",
-                    "data_registro",
-                    "criado_por",
-                    "status",
-                    "fotos",
-                ]
-        
-                for c in colunas_ordenadas:
-                    if c not in df_exibicao.columns:
-                        df_exibicao[c] = None
-        
-                df_exibicao = df_exibicao[colunas_ordenadas]
-        
-                if not filtro_ativo:
-                    st.info("Use a barra de pesquisa ou o filtro de colaborador para visualizar os equipamentos.")
-                else:
-                    total_registros = len(df_exibicao)
-                    itens_por_pagina = 15
-                    total_paginas = max(1, (total_registros + itens_por_pagina - 1) // itens_por_pagina)
-        
-                    filtro_paginacao = f"{pesquisa}|{colaborador_selecionado}|{total_registros}"
-                    if st.session_state.get("filtro_lista_equipamentos") != filtro_paginacao:
-                        st.session_state.filtro_lista_equipamentos = filtro_paginacao
-                        st.session_state.pagina_lista_equipamentos = 1
-        
-                    pagina_atual = st.session_state.get("pagina_lista_equipamentos", 1)
-                    pagina_atual = min(max(1, pagina_atual), total_paginas)
-                    st.session_state.pagina_lista_equipamentos = pagina_atual
-        
-                    inicio = (pagina_atual - 1) * itens_por_pagina
-                    fim = inicio + itens_por_pagina
-                    df_pagina = df_exibicao.iloc[inicio:fim]
-        
-                    st.write(
-                        f"Exibindo {inicio + 1 if total_registros else 0} a "
-                        f"{min(fim, total_registros)} de {total_registros} registros:"
-                    )
-        
-                    if df_exibicao.empty:
-                        st.warning("Nenhum equipamento encontrado com os filtros informados.")
-                    else:
-                        col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])
-        
-                        with col_pag1:
-                            if st.button(
-                                "Anterior",
-                                disabled=pagina_atual <= 1,
-                                key="btn_pagina_anterior_equipamentos",
-                            ):
-                                st.session_state.pagina_lista_equipamentos = pagina_atual - 1
-                                st.rerun()
-        
-                        with col_pag2:
-                            st.markdown(
-                                f"<div style='text-align:center;'>Pagina {pagina_atual} de {total_paginas}</div>",
-                                unsafe_allow_html=True,
-                            )
-        
-                        with col_pag3:
-                            if st.button(
-                                "Proxima",
-                                disabled=pagina_atual >= total_paginas,
-                                key="btn_pagina_proxima_equipamentos",
-                            ):
-                                st.session_state.pagina_lista_equipamentos = pagina_atual + 1
-                                st.rerun()
-        
-                        for i in range(0, len(df_pagina), 4):
-                            cols = st.columns(4)
-        
-                            for col, (_, item) in zip(cols, df_pagina.iloc[i:i + 4].iterrows()):
-                                with col:
-                                    with st.container(border=True):
-                                        codigo_card = str(item.get("codigo_controle") or "sem_codigo").replace(" ", "_").replace("/", "_")
-                                        fotos = obter_lista_fotos(item.get("fotos"))
-        
-                                        caminhos_fotos = []
-                                        for foto in fotos:
-                                            caminho_foto = obter_caminho_bucket(foto)
-                                            if caminho_foto:
-                                                caminhos_fotos.append(caminho_foto)
-        
-                                        if caminhos_fotos:
-                                            try:
-                                                mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
-                                                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                                            except Exception:
-                                                st.warning("Foto encontrada, mas nao foi possivel carregar.")
-                                        else:
-                                            st.info("Sem foto cadastrada")
-        
-                                        st.markdown(f"**Codigo:** {item.get('codigo_controle') or '-'}")
-                                        st.markdown(f"**Tipo:** {item.get('tipo') or '-'}")
-                                        st.markdown(f"**Marca/Modelo:** {item.get('marca') or '-'} / {item.get('modelo') or '-'}")
-                                        st.markdown(f"**Service Tag:** {item.get('service_tag') or '-'}")
-                                        st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
-                                        st.markdown(f"**Status:** {item.get('status') or '-'}")
-        
-                                        descricao = item.get("descricao")
-                                        if descricao and str(descricao).strip() not in ["", "None", "nan"]:
-                                            st.caption(str(descricao))
-        
-                        col_btn1, col_btn2, _ = st.columns([1, 1, 6])
-        
-                        with col_btn1:
-                            dados_excel = gerar_excel(df_exibicao)
-                            st.download_button(
-                                label="Extrair em EXCEL",
-                                data=dados_excel,
-                                file_name="lista_equipamentos.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            )
-        
-                        with col_btn2:
-                            dados_pdf = gerar_pdf(df_exibicao, "Relacao de Equipamentos - Lista Geral")
-                            st.download_button(
-                                label="Extrair em PDF",
-                                data=dados_pdf,
-                                file_name="lista_equipamentos.pdf",
-                                mime="application/pdf",
-                            )
+        col_filtro1, col_filtro2 = st.columns([2, 1])
+
+        with col_filtro1:
+            pesquisa = st.text_input("Pesquisar na lista (Qualquer referencia):")
+
+        with col_filtro2:
+            if "colaborador" in df_completo.columns:
+                lista_colaboradores = df_completo["colaborador"].dropna().unique().tolist()
+                lista_colaboradores = sorted([str(c) for c in lista_colaboradores if str(c).strip() != ""])
             else:
-                st.info("Nenhum equipamento cadastrado ate o momento.")
+                lista_colaboradores = []
+
+            opcoes_colaboradores = ["Todos"] + lista_colaboradores
+            colaborador_selecionado = st.selectbox("Filtrar por Colaborador:", options=opcoes_colaboradores)
+
+        filtro_ativo = bool(pesquisa) or colaborador_selecionado != "Todos"
+
+        df_exibicao = df_completo.copy()
+
+        if colaborador_selecionado != "Todos":
+            df_exibicao = df_exibicao[df_exibicao["colaborador"] == colaborador_selecionado]
+
+        if pesquisa:
+            p_lower = pesquisa.lower()
+            mascara = df_exibicao.astype(str).apply(
+                lambda x: x.str.lower().str.contains(p_lower, na=False)
+            ).any(axis=1)
+            df_exibicao = df_exibicao[mascara]
+
+        colunas_ordenadas = [
+            "codigo_controle",
+            "service_tag",
+            "tipo",
+            "marca",
+            "modelo",
+            "colaborador",
+            "descricao",
+            "data_registro",
+            "criado_por",
+            "status",
+            "fotos",
+        ]
+
+        for c in colunas_ordenadas:
+            if c not in df_exibicao.columns:
+                df_exibicao[c] = None
+
+        df_exibicao = df_exibicao[colunas_ordenadas]
+
+        if not filtro_ativo:
+            st.info("Use a barra de pesquisa ou o filtro de colaborador para visualizar os equipamentos.")
+        else:
+            total_registros = len(df_exibicao)
+            itens_por_pagina = 15
+            total_paginas = max(1, (total_registros + itens_por_pagina - 1) // itens_por_pagina)
+
+            filtro_paginacao = f"{pesquisa}|{colaborador_selecionado}|{total_registros}"
+            if st.session_state.get("filtro_lista_equipamentos") != filtro_paginacao:
+                st.session_state.filtro_lista_equipamentos = filtro_paginacao
+                st.session_state.pagina_lista_equipamentos = 1
+
+            pagina_atual = st.session_state.get("pagina_lista_equipamentos", 1)
+            pagina_atual = min(max(1, pagina_atual), total_paginas)
+            st.session_state.pagina_lista_equipamentos = pagina_atual
+
+            inicio = (pagina_atual - 1) * itens_por_pagina
+            fim = inicio + itens_por_pagina
+            df_pagina = df_exibicao.iloc[inicio:fim]
+
+            st.write(
+                f"Exibindo {inicio + 1 if total_registros else 0} a "
+                f"{min(fim, total_registros)} de {total_registros} registros:"
+            )
+
+            if df_exibicao.empty:
+                st.warning("Nenhum equipamento encontrado com os filtros informados.")
+            else:
+                col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])
+
+                with col_pag1:
+                    if st.button(
+                        "Anterior",
+                        disabled=pagina_atual <= 1,
+                        key="btn_pagina_anterior_equipamentos",
+                    ):
+                        st.session_state.pagina_lista_equipamentos = pagina_atual - 1
+                        st.rerun()
+
+                with col_pag2:
+                    st.markdown(
+                        f"<div style='text-align:center;'>Pagina {pagina_atual} de {total_paginas}</div>",
+                        unsafe_allow_html=True,
+                    )
+
+                with col_pag3:
+                    if st.button(
+                        "Proxima",
+                        disabled=pagina_atual >= total_paginas,
+                        key="btn_pagina_proxima_equipamentos",
+                    ):
+                        st.session_state.pagina_lista_equipamentos = pagina_atual + 1
+                        st.rerun()
+
+                for i in range(0, len(df_pagina), 4):
+                    cols = st.columns(4)
+
+                    for col, (_, item) in zip(cols, df_pagina.iloc[i:i + 4].iterrows()):
+                        with col:
+                            with st.container(border=True):
+                                codigo_card = str(item.get("codigo_controle") or "sem_codigo").replace(" ", "_").replace("/", "_")
+                                fotos = obter_lista_fotos(item.get("fotos"))
+
+                                caminhos_fotos = []
+                                for foto in fotos:
+                                    caminho_foto = obter_caminho_bucket(foto)
+                                    if caminho_foto:
+                                        caminhos_fotos.append(caminho_foto)
+
+                                if caminhos_fotos:
+                                    try:
+                                        mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
+                                        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                                    except Exception:
+                                        st.warning("Foto encontrada, mas nao foi possivel carregar.")
+                                else:
+                                    st.info("Sem foto cadastrada")
+
+                                st.markdown(f"**Codigo:** {item.get('codigo_controle') or '-'}")
+                                st.markdown(f"**Tipo:** {item.get('tipo') or '-'}")
+                                st.markdown(f"**Marca/Modelo:** {item.get('marca') or '-'} / {item.get('modelo') or '-'}")
+                                st.markdown(f"**Service Tag:** {item.get('service_tag') or '-'}")
+                                st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
+                                st.markdown(f"**Status:** {item.get('status') or '-'}")
+
+                                descricao = item.get("descricao")
+                                if descricao and str(descricao).strip() not in ["", "None", "nan"]:
+                                    st.caption(str(descricao))
+
+                col_btn1, col_btn2, _ = st.columns([1, 1, 6])
+
+                with col_btn1:
+                    dados_excel = gerar_excel(df_exibicao)
+                    st.download_button(
+                        label="Extrair em EXCEL",
+                        data=dados_excel,
+                        file_name="lista_equipamentos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+
+                with col_btn2:
+                    dados_pdf = gerar_pdf(df_exibicao, "Relacao de Equipamentos - Lista Geral")
+                    st.download_button(
+                        label="Extrair em PDF",
+                        data=dados_pdf,
+                        file_name="lista_equipamentos.pdf",
+                        mime="application/pdf",
+                    )
+    else:
+        st.info("Nenhum equipamento cadastrado ate o momento.")
 
 # --- 4. RELATÓRIOS CORRIGIDO (Apenas Master) ---
 elif menu == "Relatórios" and st.session_state.user_role == "Master":
