@@ -793,26 +793,36 @@ elif menu == "Lista de Equipamentos":
             if df_exibicao.empty:
                 st.warning("Nenhum equipamento encontrado com os filtros informados.")
             else:
-                col_pag1, col_pag2, col_pag3 = st.columns([1, 2, 1])
+                _, col_pag1, col_pag2, col_pag3, _ = st.columns([3, 1, 1.4, 1, 3])
 
                 with col_pag1:
                     if st.button(
                         "Anterior",
+                        use_container_width=True,
                         disabled=pagina_atual <= 1,
                         key="btn_pagina_anterior_equipamentos",
                     ):
                         st.session_state.pagina_lista_equipamentos = pagina_atual - 1
                         st.rerun()
-
+                
                 with col_pag2:
                     st.markdown(
-                        f"<div style='text-align:center;'>Pagina {pagina_atual} de {total_paginas}</div>",
+                        f"""
+                        <div style='
+                            text-align:center;
+                            padding-top: 0.45rem;
+                            white-space: nowrap;
+                        '>
+                            Pagina {pagina_atual} de {total_paginas}
+                        </div>
+                        """,
                         unsafe_allow_html=True,
                     )
-
+                
                 with col_pag3:
                     if st.button(
                         "Proxima",
+                        use_container_width=True,
                         disabled=pagina_atual >= total_paginas,
                         key="btn_pagina_proxima_equipamentos",
                     ):
