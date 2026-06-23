@@ -59,7 +59,7 @@ def obter_caminho_bucket(foto):
     return foto
 
 
-def imagem_bucket_para_html(caminho_foto):
+def imagem_bucket_para_html(caminho_foto, indice_atual, total_fotos, codigo_card):
     bytes_foto = supabase.storage.from_(BUCKET_FOTOS).download(caminho_foto)
     ext = caminho_foto.split(".")[-1].lower()
 
@@ -71,27 +71,75 @@ def imagem_bucket_para_html(caminho_foto):
 
     img_base64 = base64.b64encode(bytes_foto).decode("utf-8")
 
+    botoes = ""
+    if total_fotos > 1:
+        botoes = f"""
+            <button
+                class="slide-btn slide-btn-left"
+                onclick="document.getElementById('ant_{codigo_card}').click()"
+            >‹</button>
+            <button
+                class="slide-btn slide-btn-right"
+                onclick="document.getElementById('prox_{codigo_card}').click()"
+            >›</button>
+        """
+
     return f"""
-        <div style="
-            width: 100%;
-            height: 220px;
-            overflow: hidden;
-            border-radius: 8px;
-            background: #f3f4f6;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        ">
-            <img
-                src="data:{mime};base64,{img_base64}"
-                style="
-                    width: 100%;
-                    height: 100%;
-                    object-fit: cover;
-                    display: block;
-                "
-            />
+        <style>
+            .foto-card-wrap-{codigo_card} {{
+                position: relative;
+                width: 100%;
+                height: 220px;
+                overflow: hidden;
+                border-radius: 8px;
+                background: #f3f4f6;
+            }}
+
+            .foto-card-wrap-{codigo_card} img {{
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }}
+
+            .foto-card-wrap-{codigo_card} .slide-btn {{
+                position: absolute;
+                top: 50%;
+                transform: translateY(-50%);
+                width: 34px;
+                height: 46px;
+                border: 0;
+                border-radius: 999px;
+                background: rgba(0, 0, 0, 0.22);
+                color: white;
+                font-size: 30px;
+                line-height: 30px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding-bottom: 4px;
+            }}
+
+            .foto-card-wrap-{codigo_card} .slide-btn-left {{
+                left: 8px;
+            }}
+
+            .foto-card-wrap-{codigo_card} .slide-btn-right {{
+                right: 8px;
+            }}
+
+            .foto-card-wrap-{codigo_card} .slide-btn:hover {{
+                background: rgba(0, 0, 0, 0.36);
+            }}
+        </style>
+
+        <div class="foto-card-wrap-{codigo_card}">
+            <img src="data:{mime};base64,{img_base64}" />
+            {botoes}
         </div>
+
+        <div style="height: 12px;"></div>
     """
 
 # --- Configuração Supabase ---
@@ -625,13 +673,13 @@ elif menu == "Lista de Equipamentos":
             if df_exibicao.empty:
                 st.warning("Nenhum equipamento encontrado com os filtros informados.")
             else:
-                for i in range(0, len(df_exibicao), 3):
-                    cols = st.columns(3)
-
-                    for col, (_, item) in zip(cols, df_exibicao.iloc[i:i + 3].iterrows()):
+                for i in range(0, len(df_exibicao), 4):
+                    cols = st.columns(4)
+                
+                    for col, (_, item) in zip(cols, df_exibicao.iloc[i:i + 4].iterrows()):
                         with col:
                             with st.container(border=True):
-                                codigo_card = str(item.get("codigo_controle") or "sem_codigo")
+                                codigo_card = str(item.get("codigo_controle") or "sem_codigo").replace(" ", "_").replace("/", "_")
                                 fotos = obter_lista_fotos(item.get("fotos"))
                                 
                                 if fotos:
@@ -645,32 +693,34 @@ elif menu == "Lista de Equipamentos":
                                     if st.session_state[chave_slide] >= total_fotos:
                                         st.session_state[chave_slide] = 0
                                 
-                                    foto_atual = fotos[st.session_state[chave_slide]]
+                                    indice_atual = st.session_state[chave_slide]
+                                    foto_atual = fotos[indice_atual]
                                     caminho_foto = obter_caminho_bucket(foto_atual)
                                 
                                     if caminho_foto:
                                         try:
-                                            html_img = imagem_bucket_para_html(caminho_foto)
+                                            html_img = imagem_bucket_para_html(
+                                                caminho_foto,
+                                                indice_atual,
+                                                total_fotos,
+                                                codigo_card
+                                            )
                                             st.markdown(html_img, unsafe_allow_html=True)
                                 
                                             if total_fotos > 1:
-                                                col_ant, col_count, col_prox = st.columns([1, 2, 1])
+                                                col_ant, col_prox = st.columns(2)
                                 
                                                 with col_ant:
-                                                    if st.button("←", key=f"ant_{codigo_card}"):
-                                                        st.session_state[chave_slide] = (st.session_state[chave_slide] - 1) % total_fotos
+                                                    if st.button("Anterior", key=f"ant_{codigo_card}", label_visibility="collapsed"):
+                                                        st.session_state[chave_slide] = (indice_atual - 1) % total_fotos
                                                         st.rerun()
-                                
-                                                with col_count:
-                                                    st.markdown(
-                                                        f"<p style='text-align:center; margin-top:8px;'>{st.session_state[chave_slide] + 1} / {total_fotos}</p>",
-                                                        unsafe_allow_html=True
-                                                    )
                                 
                                                 with col_prox:
-                                                    if st.button("→", key=f"prox_{codigo_card}"):
-                                                        st.session_state[chave_slide] = (st.session_state[chave_slide] + 1) % total_fotos
+                                                    if st.button("Próxima", key=f"prox_{codigo_card}", label_visibility="collapsed"):
+                                                        st.session_state[chave_slide] = (indice_atual + 1) % total_fotos
                                                         st.rerun()
+                                
+                                                st.caption(f"{indice_atual + 1} / {total_fotos}")
                                 
                                         except Exception:
                                             st.warning("Foto encontrada, mas não foi possível carregar.")
