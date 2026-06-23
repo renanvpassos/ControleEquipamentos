@@ -1082,7 +1082,11 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
     op_relatorio = st.selectbox("Selecione o tipo de relatório desejado:", [
         "1. Relação de equipamentos cadastrados por período",
         "2. Relação de equipamentos por usuário específico",
-        "3. Relação consolidada de todos os usuários"
+        "3. Relação consolidada de todos os usuários",
+        "4. Relatório de Todas as Baixas (por período)",
+        "5. Relatório de Baixa por colaborador (por período)",
+        "6. Relatório de Baixa por equipamento (por período)",
+        "7. Relatório de Estatísticas de Baixa"
     ])
     
     df_filtrado = pd.DataFrame()
@@ -1143,6 +1147,117 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                     st.error("A coluna 'colaborador' não foi encontrada.")
             else:
                 st.warning("Banco de dados vazio.")
+                
+    elif op_relatorio.startswith("4"):
+        # Relatório de Todas as Baixas por Período
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            d_inicio = st.date_input("Data de Início Baixas", date.today())
+        with col_d2:
+            d_fim = st.date_input("Data de Fim Baixas", date.today())
+            
+        if st.button("Filtrar Todas as Baixas"):
+            # Aqui trazemos todas as baixas gravadas no histórico por data, independente de estarem arquivadas ou não
+            res = supabase.table("baixas").select("*").gte("data_baixa", str(d_inicio)).lte("data_baixa", str(d_fim)).execute()
+            if res.data:
+                df_filtrado = pd.DataFrame(res.data)
+                titulo_doc = f"Histórico Geral de Baixas de {d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}"
+            else:
+                st.warning("Nenhuma baixa cadastrada neste período.")
+
+    elif op_relatorio.startswith("5"):
+        # Relatório de Baixa por colaborador
+        res_colab = supabase.table("equipamentos").select("colaborador").execute()
+        lista_colabs = list(set([item['colaborador'] for item in res_colab.data if item.get('colaborador')])) if res_colab.data else []
+        lista_colabs = sorted(lista_colabs, key=str.lower)
+        
+        colab_selecionado = st.selectbox("Selecione o Colaborador para buscar baixas:", lista_colabs)
+        
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            d_inicio = st.date_input("Data de Início", date.today())
+        with col_d2:
+            d_fim = st.date_input("Data de Fim", date.today())
+            
+        if st.button("Filtrar Baixas por Colaborador") and colab_selecionado:
+            # Buscamos as Service Tags que pertencem ou já pertenceram a esse colaborador
+            res_eq = supabase.table("equipamentos").select("service_tag").eq("colaborador", colab_selecionado).execute()
+            if res_eq.data:
+                tags = [item["service_tag"] for item in res_eq.data]
+                res_baixas = supabase.table("baixas").select("*").in_("service_tag", tags).gte("data_baixa", str(d_inicio)).lte("data_baixa", str(d_fim)).execute()
+                if res_baixas.data:
+                    df_filtrado = pd.DataFrame(res_baixas.data)
+                    titulo_doc = f"Baixas do Colaborador {colab_selecionado} ({d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')})"
+                else:
+                    st.warning(f"Nenhuma baixa encontrada para equipamentos deste colaborador no período.")
+            else:
+                st.warning("Esse colaborador não possui equipamentos registrados para rastrear baixas.")
+
+    elif op_relatorio.startswith("6"):
+        # Relatório de Baixa por equipamento
+        res_eq = supabase.table("equipamentos").select("service_tag").execute()
+        lista_tags = list(set([item['service_tag'] for item in res_eq.data if item.get('service_tag')])) if res_eq.data else []
+        lista_tags = sorted(lista_tags)
+        
+        st_selecionada = st.selectbox("Selecione a Service Tag do Equipamento:", lista_tags)
+        
+        col_d1, col_d2 = st.columns(2)
+        with col_d1:
+            d_inicio = st.date_input("Data de Início", date.today())
+        with col_d2:
+            d_fim = st.date_input("Data de Fim", date.today())
+            
+        if st.button("Filtrar Histórico do Equipamento") and st_selecionada:
+            res = supabase.table("baixas").select("*").eq("service_tag", st_selecionada).gte("data_baixa", str(d_inicio)).lte("data_baixa", str(d_fim)).execute()
+            if res.data:
+                df_filtrado = pd.DataFrame(res.data)
+                titulo_doc = f"Histórico de Baixas do Equipamento ST {st_selecionada} ({d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')})"
+            else:
+                st.warning("Nenhuma baixa registrada para este equipamento no período selecionado.")
+
+    elif op_relatorio.startswith("7"):
+        # Relatório de Estatísticas de Baixa
+        st.subheader("📊 Indicadores e Estatísticas Gerais de Baixas")
+        
+        res_all_baixas = supabase.table("baixas").select("*").execute()
+        if res_all_baixas.data:
+            df_estatisticas = pd.DataFrame(res_all_baixas.data)
+            
+            total_baixas = len(df_estatisticas)
+            baixas_arquivadas = len(df_estatisticas[df_estatisticas["arquivado"] == True])
+            baixas_em_aberto = total_baixas - baixas_arquivadas
+            
+            # Exibe painel em colunas na tela
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Total de Baixas no Histórico", total_baixas)
+            m2.metric("Baixas Resolvidas (Reativados)", baixas_arquivadas)
+            m3.metric("Equipamentos Atualmente Inativos", baixas_em_aberto)
+            
+            st.markdown("---")
+            col_e1, col_e2 = st.columns(2)
+            
+            with col_e1:
+                st.markdown("**🏆 Equipamentos com mais registros de Baixa:**")
+                top_equipamentos = df_estatisticas["service_tag"].value_counts().reset_index()
+                top_equipamentos.columns = ["Service Tag", "Quantidade de Baixas"]
+                st.dataframe(top_equipamentos.head(5), use_container_width=True, hide_index=True)
+                
+            with col_e2:
+                st.markdown("**👤 Usuários que mais registraram Baixas:**")
+                top_usuarios = df_estatisticas["criado_por"].value_counts().reset_index()
+                top_usuarios.columns = ["Responsável (E-mail)", "Baixas Criadas"]
+                st.dataframe(top_usuarios.head(5), use_container_width=True, hide_index=True)
+                
+            st.markdown("**📋 Motivos mais frequentes de Baixas:**")
+            top_motivos = df_estatisticas["motivo"].value_counts().reset_index()
+            top_motivos.columns = ["Motivo", "Total"]
+            st.dataframe(top_motivos, use_container_width=True, hide_index=True)
+            
+            # Deixamos o df_filtrado como a lista completa para caso o Master queira exportar estes dados para Excel/PDF
+            df_filtrado = df_estatisticas
+            titulo_doc = "Relatório Consolidado de Estatísticas de Baixas"
+        else:
+            st.info("Não há dados de baixas suficientes no banco para gerar estatísticas.")
                 
     if not df_filtrado.empty:
         st.markdown("---")
