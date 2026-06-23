@@ -15,28 +15,12 @@ import streamlit.components.v1 as components
 BUCKET_FOTOS = "equipamentos-fotos"
 
 @st.dialog("Foto do equipamento", width="large")
-def abrir_foto_ampliada(imagem_base64, mime):
-    st.markdown(
-        f"""
-        <div style="
-            width: 100%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        ">
-            <img
-                src="data:{mime};base64,{imagem_base64}"
-                style="
-                    max-width: 100%;
-                    max-height: 80vh;
-                    object-fit: contain;
-                    border-radius: 10px;
-                "
-            />
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+def abrir_foto_ampliada(bytes_foto):
+    st.image(bytes_foto, use_container_width=True)
+
+
+def baixar_foto_bucket(caminho_foto):
+    return supabase.storage.from_(BUCKET_FOTOS).download(caminho_foto)
 
 def obter_lista_fotos(valor):
     if valor is None:
@@ -746,12 +730,60 @@ elif menu == "Lista de Equipamentos":
                                 
                                 if caminhos_fotos:
                                     try:
-                                        imagem_base64, mime = mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
+                                        chave_slide = f"slide_foto_{codigo_card}"
                                 
-                                        if st.button("Ampliar foto", key=f"ampliar_{codigo_card}", use_container_width=True):
-                                            abrir_foto_ampliada(imagem_base64, mime)
+                                        if chave_slide not in st.session_state:
+                                            st.session_state[chave_slide] = 0
+                                
+                                        total_fotos = len(caminhos_fotos)
+                                
+                                        if st.session_state[chave_slide] >= total_fotos:
+                                            st.session_state[chave_slide] = 0
+                                
+                                        indice_atual = st.session_state[chave_slide]
+                                        caminho_atual = caminhos_fotos[indice_atual]
+                                        bytes_foto = baixar_foto_bucket(caminho_atual)
+                                
+                                        st.markdown(
+                                            """
+                                            <style>
+                                                div[data-testid="stImage"] img {
+                                                    height: 220px;
+                                                    object-fit: cover;
+                                                    border-radius: 8px;
+                                                    cursor: zoom-in;
+                                                }
+                                            </style>
+                                            """,
+                                            unsafe_allow_html=True
+                                        )
+                                
+                                        if st.button("", key=f"abrir_foto_{codigo_card}", use_container_width=True):
+                                            abrir_foto_ampliada(bytes_foto)
+                                
+                                        st.image(bytes_foto, use_container_width=True)
+                                
+                                        if total_fotos > 1:
+                                            col_ant, col_count, col_prox = st.columns([1, 2, 1])
+                                
+                                            with col_ant:
+                                                if st.button("‹", key=f"ant_{codigo_card}", use_container_width=True):
+                                                    st.session_state[chave_slide] = (indice_atual - 1) % total_fotos
+                                                    st.rerun()
+                                
+                                            with col_count:
+                                                st.markdown(
+                                                    f"<p style='text-align:center; margin: 8px 0 0;'>{indice_atual + 1} / {total_fotos}</p>",
+                                                    unsafe_allow_html=True
+                                                )
+                                
+                                            with col_prox:
+                                                if st.button("›", key=f"prox_{codigo_card}", use_container_width=True):
+                                                    st.session_state[chave_slide] = (indice_atual + 1) % total_fotos
+                                                    st.rerun()
                                 
                                         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                                
                                     except Exception:
                                         st.warning("Foto encontrada, mas não foi possível carregar.")
                                 else:
