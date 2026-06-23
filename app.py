@@ -99,7 +99,7 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
 
                 if (slides_{codigo_card}.length <= 1) {{
                     left_{codigo_card}.style.display = "none";
-                    right_{codigo_card}.style.display = "none";
+                    right_{codigo_card} = "none";
                 }}
             }}
 
@@ -259,7 +259,6 @@ if "user_role" not in st.session_state:
 
 def get_user_role(user_id):
     try:
-        # Busca o cargo do usuário na tabela 'perfis'
         res = supabase.table("perfis").select("cargo").eq("id", user_id).single().execute()
         if res.data:
             return res.data.get("cargo")
@@ -294,7 +293,6 @@ if not st.session_state.user:
             try:
                 res = supabase.auth.sign_up({"email": c_email, "password": c_senha})
                 if res.user:
-                    # Cria o perfil padrão com cargo 'Nenhum'
                     supabase.table("perfis").insert({
                         "id": res.user.id,
                         "email": c_email,
@@ -347,21 +345,18 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
     story.append(Spacer(1, 15))
     
     colunas_pdf = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'colaborador', 'status', 'data_registro']
-    
     colunas_existentes = [c for c in colunas_pdf if c in df.columns]
     
     if len(colunas_existentes) < len(colunas_pdf):
         st.warning(f"Algumas colunas não foram encontradas: {set(colunas_pdf) - set(colunas_existentes)}")
         
     df_pdf = df[colunas_existentes].copy()
-    
     table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
     
     for _, row in df_pdf.iterrows():
         row_cells = []
         for val in row.values:
             row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
-        # CORREÇÃO: O append foi movido para fora do loop das colunas (recuo ajustado)
         table_data.append(row_cells)
     
     t = Table(table_data, repeatRows=1)
@@ -379,7 +374,6 @@ def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
     return buffer.getvalue()
 
 
-# --- NOVA FUNÇÃO: GERA APENAS 1 PDF CONSOLIDADO COM 1 PAGINA POR COLABORADOR ---
 def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidado de Equipamentos"):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
@@ -391,33 +385,25 @@ def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidad
     cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10)
     header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.white, fontName="Helvetica-Bold")
     
-    # Colunas selecionadas para o PDF
     colunas_pdf = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'status', 'data_registro']
-    
-    # Agrupa por colaborador sem alterar a ordenação alfabética prévia do Pandas
     grupos = list(df_ordenado.groupby('colaborador', sort=False))
     
     for i, (colaborador, group) in enumerate(grupos):
-        # Título do Relatório Geral e metadados apenas na primeira página
         if i == 0:
             story.append(Paragraph(titulo_geral, title_style))
             story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
             story.append(Spacer(1, 15))
             
-        # Nome do Colaborador atual em destaque na página dele
         story.append(Paragraph(f"Colaborador: {colaborador}", colab_style))
         story.append(Spacer(1, 5))
         
         df_pdf = group[colunas_pdf].copy() if all(c in group.columns for c in colunas_pdf) else group.iloc[:, :6]
-        
-        # Monta a estrutura da tabela do colaborador
         table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
         
         for _, row in df_pdf.iterrows():
             row_cells = []
             for val in row.values:
                 row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
-            # CORREÇÃO: O append foi movido para fora do loop das colunas (recuo ajustado)
             table_data.append(row_cells)
             
         t = Table(table_data, repeatRows=1)
@@ -432,7 +418,6 @@ def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidad
         ]))
         story.append(t)
         
-        # Se não for o último colaborador da lista, insere uma quebra de página
         if i < len(grupos) - 1:
             story.append(PageBreak())
             
@@ -448,6 +433,7 @@ if st.session_state.user_role == "Master":
     opcoes_menu.append("Editar Cadastro")
 if st.session_state.user_role in ["Supervisor", "Master"]:
     opcoes_menu.append("Lista de Equipamentos")
+    opcoes_menu.append("Baixas")  # Novo Menu Adicionado
 if st.session_state.user_role == "Master":
     opcoes_menu.append("Relatórios")
     opcoes_menu.append("Log de Atividades")
@@ -473,7 +459,6 @@ if menu == "Cadastrar Equipamento":
         colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
         
-        # Criando colunas para colocar os campos lado a lado
         col1, col2 = st.columns(2)
         with col1:
             codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
@@ -484,9 +469,8 @@ if menu == "Cadastrar Equipamento":
         
         if st.form_submit_button("Salvar Cadastro"):
             codigo = codigo_input.strip().upper()
-            service_tag = service_tag_input.strip().upper() # Padronizando também a Service Tag
+            service_tag = service_tag_input.strip().upper()
             
-            # Adicionado service_tag na validação
             if not tipo or not marca or not colaborador.strip() or not codigo or not service_tag or not fotos or len(fotos) == 0:
                 st.error("Por favor, preencha todos os campos obrigatórios (*) e anexe pelo menos uma foto.")
             elif len(fotos) > 10:
@@ -519,7 +503,7 @@ if menu == "Cadastrar Equipamento":
                     if not erro_upload:
                         supabase.table("equipamentos").insert({
                             "codigo_controle": codigo,
-                            "service_tag": service_tag, # Adicionado campo para o Supabase
+                            "service_tag": service_tag,
                             "tipo": tipo,
                             "marca": marca,
                             "modelo": modelo if modelo else None,
@@ -543,17 +527,12 @@ if menu == "Cadastrar Equipamento":
 elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
     st.header("Editar / Remover Cadastro de Equipamento")
     
-    # 1. Buscar todos os dados para alimentar os filtros dinâmicos
     res_busca = supabase.table("equipamentos").select("*").execute()
     todos_equipamentos = res_busca.data if res_busca.data else []
-    
-    # Criar uma variável para armazenar o equipamento que será editado no final
     equip_selecionado = None
 
-    # 2. Opção de escolha do método de busca
     metodo_busca = st.radio("Como deseja localizar o equipamento?", ["Por busca textual", "Por Colaborador/Tipo"])
 
-    # --- MÉTODO 1: BUSCA TEXTUAL ---
     if metodo_busca == "Por busca textual":
         busca_ref = st.text_input("Buscar equipamento para edição (Digite qualquer referência: Código, Nome, Colaborador, Marca...):")
         
@@ -577,30 +556,20 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                 escolha = st.selectbox("Selecione o equipamento exato para manipular:", list(opcoes_select.keys()))
                 equip_selecionado = opcoes_select[escolha]
 
-    # --- MÉTODO 2: FILTRO POR COLABORADOR E TIPO ---
     else:
         if not todos_equipamentos:
             st.warning("Nenhum equipamento cadastrado no banco de dados.")
         else:
-            # Extrair colaboradores únicos (removendo nulos/vazios) e ordenar
             colaboradores_disponiveis = sorted(list(set([item["colaborador"] for item in todos_equipamentos if item.get("colaborador")])))
-            
             colab_escolhido = st.selectbox("Selecione o Colaborador:", ["Selecione..."] + colaboradores_disponiveis)
             
             if colab_escolhido != "Selecione...":
-                # Filtrar equipamentos do colaborador selecionado
                 equips_do_colab = [item for item in todos_equipamentos if item.get("colaborador") == colab_escolhido]
-                
-                # Listar os tipos de equipamentos que ESSE colaborador possui
                 tipos_disponiveis = sorted(list(set([item["tipo"] for item in equips_do_colab if item.get("tipo")])))
-                
                 tipo_escolhido = st.selectbox("Selecione o Tipo de Equipamento:", ["Selecione..."] + tipos_disponiveis)
                 
                 if tipo_escolhido != "Selecione...":
-                    # Filtrar pelo tipo escolhido
                     equips_finais = [item for item in equips_do_colab if item.get("tipo") == tipo_escolhido]
-                    
-                    # Se houver mais de um equipamento do mesmo tipo para o mesmo colaborador (ex: 2 Monitores)
                     opcoes_finais = {f"{i['codigo_controle']} - {i['marca']} {i.get('modelo', '')}": i for i in equips_finais}
                     
                     if len(opcoes_finais) == 1:
@@ -609,7 +578,6 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                         escolha_final = st.selectbox("Mais de um equipamento encontrado. Selecione pelo Código/Marca:", list(opcoes_finais.keys()))
                         equip_selecionado = opcoes_finais[escolha_final]
 
-    # --- 3. FORMULÁRIO DE EDIÇÃO (Executa se um equipamento foi encontrado/selecionado) ---
     if equip_selecionado:
         st.markdown("---")
         
@@ -617,7 +585,6 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
             ed_st = st.text_input("Service Tag", value=str(equip_selecionado.get('service_tag') or ""))
             
-            # Validação preventiva caso o tipo/marca não estejam nas listas padrões
             tipos_padrao = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
             ed_tipo_idx = tipos_padrao.index(equip_selecionado['tipo']) if equip_selecionado['tipo'] in tipos_padrao else 0
             ed_tipo = st.selectbox("Tipo de Equipamento*", tipos_padrao, index=ed_tipo_idx)
@@ -629,7 +596,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
             ed_colab = st.text_input("Colaborador Responsável*", value=equip_selecionado.get('colaborador') or "")
             ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
-            ed_status = st.selectbox("Status", ["Ativo", "Baixado"], index=0 if equip_selecionado.get('status') == "Ativo" else 1)
+            ed_status = st.selectbox("Status", ["Ativo", "Baixado", "Inativo"], index=["Ativo", "Baixado", "Inativo"].index(equip_selecionado.get('status', 'Ativo')) if equip_selecionado.get('status') in ["Ativo", "Baixado", "Inativo"] else 0)
             
             lista_fotos_atual = equip_selecionado.get("fotos", [])
             st.write("**Fotos salvas atualmente (Passe o mouse e clique nas setas ⤢ para ver em tamanho real):**")
@@ -732,7 +699,6 @@ elif menu == "Lista de Equipamentos":
             colaborador_selecionado = st.selectbox("Filtrar por Colaborador:", options=opcoes_colaboradores)
 
         filtro_ativo = bool(pesquisa) or colaborador_selecionado != "Todos"
-
         df_exibicao = df_completo.copy()
 
         if colaborador_selecionado != "Todos":
@@ -808,11 +774,7 @@ elif menu == "Lista de Equipamentos":
                 with col_pag2:
                     st.markdown(
                         f"""
-                        <div style='
-                            text-align:center;
-                            padding-top: 0.45rem;
-                            white-space: nowrap;
-                        '>
+                        <div style='text-align:center; padding-top: 0.45rem; white-space: nowrap;'>
                             Pagina {pagina_atual} de {total_paginas}
                         </div>
                         """,
@@ -858,7 +820,13 @@ elif menu == "Lista de Equipamentos":
                                 st.markdown(f"**Marca/Modelo:** {item.get('marca') or '-'} / {item.get('modelo') or '-'}")
                                 st.markdown(f"**Service Tag:** {item.get('service_tag') or '-'}")
                                 st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
-                                st.markdown(f"**Status:** {item.get('status') or '-'}")
+                                
+                                # CORREÇÃO DE ESTILO SOLICITADA: Status Inativo com fonte em Vermelho
+                                status_atual = item.get('status') or '-'
+                                if str(status_atual).lower() == "inativo":
+                                    st.markdown(f"**Status:** <span style='color:red; font-weight:bold;'>{status_atual}</span>", unsafe_allow_html=True)
+                                else:
+                                    st.markdown(f"**Status:** {status_atual}")
 
                                 descricao = item.get("descricao")
                                 if descricao and str(descricao).strip() not in ["", "None", "nan"]:
@@ -886,7 +854,110 @@ elif menu == "Lista de Equipamentos":
     else:
         st.info("Nenhum equipamento cadastrado ate o momento.")
 
-# --- 4. RELATÓRIOS CORRIGIDO (Apenas Master) ---
+# --- 4. NOVO MENU: BAIXAS (Supervisor e Master) ---
+elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]:
+    st.header("Gerenciamento de Baixas de Equipamentos")
+    
+    # Abas internas para separação lógica de visualização e ação
+    tab_listar, tab_nova = st.tabs(["Pesquisar Baixas", "➕ Nova Baixa"])
+    
+    with tab_listar:
+        pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
+        
+        # Carrega dados das baixas
+        res_baixas = supabase.table("baixas").select("*").order("data_baixa", desc=True).execute()
+        
+        if res_baixas.data:
+            df_baixas = pd.DataFrame(res_baixas.data)
+            
+            if pesquisa_baixa:
+                p_lower = pesquisa_baixa.lower()
+                mascara = df_baixas.astype(str).apply(
+                    lambda x: x.str.lower().str.contains(p_lower, na=False)
+                ).any(axis=1)
+                df_baixas = df_baixas[mascara]
+            
+            if df_baixas.empty:
+                st.warning("Nenhuma baixa correspondente localizada.")
+            else:
+                st.dataframe(df_baixas, use_container_width=True)
+        else:
+            st.info("Nenhum registro de baixa inserido até o momento.")
+
+    with tab_nova:
+        st.subheader("Registrar Nova Baixa")
+        
+        # Busca equipamentos ativos para popular o selectbox de forma limpa
+        res_equips_ativos = supabase.table("equipamentos").select("service_tag", "tipo", "colaborador").eq("status", "Ativo").execute()
+        
+        if not res_equips_ativos.data:
+            st.warning("Não há equipamentos ativos cadastrados disponíveis para baixa.")
+        else:
+            # Estrutura dicionário para prévia dinâmica em tempo real
+            lista_ativos = res_equips_ativos.data
+            dict_equips = {item["service_tag"]: item for item in lista_ativos}
+            opcoes_st = ["Selecione..."] + sorted(list(dict_equips.keys()))
+            
+            st_selecionada = st.selectbox("Selecione a Service Tag (Obrigatório)*", options=opcoes_st)
+            
+            # Caixa de visualização com a Prévia solicitada
+            if st_selecionada != "Selecione...":
+                dados_prev = dict_equips[st_selecionada]
+                st.info(f"**Prévia do Equipamento:**\n* **Tipo:** {dados_prev['tipo']}\n* **Colaborador Responsável:** {dados_prev['colaborador']}")
+            
+            with st.form("form_registro_baixa", clear_on_submit=True):
+                motivo = st.selectbox("Selecione o motivo da baixa (Obrigatório)*", ["", "manutenção", "descarte", "troca"])
+                observacao = st.text_area("Observação (Opcional - Máx. 240 caracteres)", max_chars=240)
+                fotos_baixa = st.file_uploader("Anexar fotos da baixa (Opcional - Máx 10 fotos)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="fotos_baixa_input")
+                
+                if st.form_submit_button("Confirmar Baixa"):
+                    if st_selecionada == "Selecione..." or not motivo:
+                        st.error("Por favor, preencha todos os campos obrigatórios (*).")
+                    elif fotos_baixa and len(fotos_baixa) > 10:
+                        st.error("Permitido anexar no máximo 10 fotos.")
+                    else:
+                        urls_fotos_baixa = []
+                        erro_upload_baixa = False
+                        
+                        if fotos_baixa:
+                            with st.spinner("Fazendo upload das fotos da baixa..."):
+                                for idx, foto in enumerate(fotos_baixa):
+                                    ext = foto.name.split(".")[-1]
+                                    caminho_storage = f"baixas/{st_selecionada}/{st_selecionada}_{idx}_{int(datetime.now().timestamp())}.{ext}"
+                                    try:
+                                        supabase.storage.from_(BUCKET_FOTOS).upload(caminho_storage, foto.read())
+                                        url = supabase.storage.from_(BUCKET_FOTOS).get_public_url(caminho_storage)
+                                        urls_fotos_baixa.append(url)
+                                    except Exception as e:
+                                        st.error(f"Falha ao enviar a foto {foto.name}: {e}")
+                                        erro_upload_baixa = True
+                                        break
+                        
+                        if not erro_upload_baixa:
+                            try:
+                                # 1. Registra o histórico na tabela de baixas
+                                supabase.table("baixas").insert({
+                                    "service_tag": st_selecionada,
+                                    "motivo": motivo,
+                                    "observacao": observacao if observacao else None,
+                                    "fotos": urls_fotos_baixa,
+                                    "criado_por": st.session_state.user.email
+                                }).execute()
+                                
+                                # 2. Atualiza o status do equipamento original para Inativo
+                                supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
+                                
+                                # 3. Registra nos logs globais do sistema
+                                registrar_log("Baixa", f'O usuário "{st.session_state.user.email}" deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
+                                
+                                st.success(f"Baixa efetuada e equipamento (ST: {st_selecionada}) definido como Inativo com sucesso!")
+                                import time
+                                time.sleep(2)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao processar a requisição no banco de dados: {e}")
+
+# --- 5. RELATÓRIOS (Apenas Master) ---
 elif menu == "Relatórios" and st.session_state.user_role == "Master":
     st.header("Central de Relatórios de Equipamentos")
     
@@ -911,10 +982,8 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             res = supabase.table("equipamentos").select("*").gte("data_registro", str(d_inicio)).lte("data_registro", str(d_fim)).execute()
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
-                
                 if 'id' in df_filtrado.columns:
                     df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
-                
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower(), na_position='last')
                 titulo_doc = f"Equipamentos Cadastrados de {d_inicio.strftime('%d/%m/%Y')} a {d_fim.strftime('%d/%m/%Y')}"
@@ -932,10 +1001,8 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             res = supabase.table("equipamentos").select("*").eq("colaborador", colab_selecionado).execute()
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
-                
                 if 'id' in df_filtrado.columns:
                     df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
-                
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower())
                 titulo_doc = f"Equipamentos sob Responsabilidade de: {colab_selecionado}"
@@ -947,12 +1014,10 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             res = supabase.table("equipamentos").select("*").execute()
             if res.data:
                 df_filtrado = pd.DataFrame(res.data)
-                
                 if 'colaborador' in df_filtrado.columns:
                     df_filtrado = df_filtrado.dropna(subset=['colaborador'])
                     if 'id' in df_filtrado.columns:
                         df_filtrado = df_filtrado.drop_duplicates(subset=['id'], keep='last')
-                        
                     df_filtrado = df_filtrado.sort_values(by='colaborador', key=lambda col: col.str.lower())
                     titulo_doc = "Relatório Geral Consolidado de Equipamentos"
                     is_consolidado_pdf = True  
@@ -961,7 +1026,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             else:
                 st.warning("Banco de dados vazio.")
                 
-    # Apresentação do frame filtrado e opções dinâmicas de download
     if not df_filtrado.empty:
         st.markdown("---")
         st.subheader("Prévia dos Resultados Filtrados")
@@ -982,7 +1046,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             st.download_button("📥 Baixar PDF", data=pdf_data, file_name=nome_arquivo, mime="application/pdf")
 
 
-# --- 5. LOG DE ATIVIDADES (Apenas Master) ---
+# --- 6. LOG DE ATIVIDADES (Apenas Master) ---
 elif menu == "Log de Atividades" and st.session_state.user_role == "Master":
     st.header("Log de Atividades do Sistema")
     st.caption("Exibe todas as inserções, atualizações e exclusões em tempo real.")
