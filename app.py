@@ -59,7 +59,6 @@ def obter_caminho_bucket(foto):
 
     return foto
 
-
 def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
     slides = []
 
@@ -81,10 +80,15 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
     components.html(
         f"""
         <div class="carousel" id="carousel-{codigo_card}">
-            <img id="img-{codigo_card}" src="" />
+            <img id="img-{codigo_card}" src="" onclick="openModal_{codigo_card}()" />
 
-            <button class="arrow left" onclick="prev_{codigo_card}()">‹</button>
-            <button class="arrow right" onclick="next_{codigo_card}()">›</button>
+            <button class="arrow left" onclick="prev_{codigo_card}(event)">‹</button>
+            <button class="arrow right" onclick="next_{codigo_card}(event)">›</button>
+        </div>
+
+        <div class="modal" id="modal-{codigo_card}" onclick="closeModal_{codigo_card}()">
+            <button class="close-modal" onclick="closeModal_{codigo_card}()">×</button>
+            <img id="modal-img-{codigo_card}" src="" />
         </div>
 
         <script>
@@ -92,11 +96,14 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
             let index_{codigo_card} = 0;
 
             const img_{codigo_card} = document.getElementById("img-{codigo_card}");
+            const modal_{codigo_card} = document.getElementById("modal-{codigo_card}");
+            const modalImg_{codigo_card} = document.getElementById("modal-img-{codigo_card}");
             const left_{codigo_card} = document.querySelector("#carousel-{codigo_card} .left");
             const right_{codigo_card} = document.querySelector("#carousel-{codigo_card} .right");
 
             function render_{codigo_card}() {{
                 img_{codigo_card}.src = slides_{codigo_card}[index_{codigo_card}];
+                modalImg_{codigo_card}.src = slides_{codigo_card}[index_{codigo_card}];
 
                 if (slides_{codigo_card}.length <= 1) {{
                     left_{codigo_card}.style.display = "none";
@@ -104,14 +111,24 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
                 }}
             }}
 
-            function prev_{codigo_card}() {{
+            function prev_{codigo_card}(event) {{
+                event.stopPropagation();
                 index_{codigo_card} = (index_{codigo_card} - 1 + slides_{codigo_card}.length) % slides_{codigo_card}.length;
                 render_{codigo_card}();
             }}
 
-            function next_{codigo_card}() {{
+            function next_{codigo_card}(event) {{
+                event.stopPropagation();
                 index_{codigo_card} = (index_{codigo_card} + 1) % slides_{codigo_card}.length;
                 render_{codigo_card}();
+            }}
+
+            function openModal_{codigo_card}() {{
+                modal_{codigo_card}.style.display = "flex";
+            }}
+
+            function closeModal_{codigo_card}() {{
+                modal_{codigo_card}.style.display = "none";
             }}
 
             render_{codigo_card}();
@@ -132,6 +149,7 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
                 height: 100%;
                 object-fit: cover;
                 display: block;
+                cursor: zoom-in;
             }}
 
             .arrow {{
@@ -164,11 +182,56 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
             .right {{
                 right: 8px;
             }}
+
+            .modal {{
+                display: none;
+                position: fixed;
+                z-index: 999999;
+                inset: 0;
+                width: 100vw;
+                height: 100vh;
+                background: rgba(0, 0, 0, 0.82);
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                box-sizing: border-box;
+                cursor: zoom-out;
+            }}
+
+            .modal img {{
+                max-width: 94vw;
+                max-height: 90vh;
+                object-fit: contain;
+                border-radius: 10px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+            }}
+
+            .close-modal {{
+                position: fixed;
+                top: 18px;
+                right: 24px;
+                width: 42px;
+                height: 42px;
+                border: 0;
+                border-radius: 999px;
+                background: rgba(255, 255, 255, 0.16);
+                color: white;
+                font-size: 34px;
+                line-height: 34px;
+                cursor: pointer;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding-bottom: 4px;
+            }}
+
+            .close-modal:hover {{
+                background: rgba(255, 255, 255, 0.28);
+            }}
         </style>
         """,
         height=232,
     )
-
 # --- Configuração Supabase ---
 @st.cache_resource
 def init_connection():
