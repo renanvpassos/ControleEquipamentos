@@ -938,7 +938,6 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                             st.session_state[chave_index_foto] = (idx_atual + 1) % len(lista_fotos)
                                             st.rerun()
                             else:
-                                # Caixa cinza placeholder caso não tenha foto cadastrada
                                 st.info("Sem foto cadastrada.")
                         
                         # --- COLUNA DO CENTRO: DADOS DA BAIXA ---
@@ -952,7 +951,8 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         
                         # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO ---
                         with col_dados_equip:
-                            st.markdown("<p style='font-weight: bold; margin-bottom: 5px;'>Dados do Equipamento</p>", unsafe_html=True)
+                            # Corrigido para markdown nativo, removendo o parâmetro incorreto
+                            st.markdown("**Dados do Equipamento**") 
                             if dados_equip:
                                 st.markdown(f"**Tipo:** {dados_equip.get('tipo', 'N/A')}")
                                 st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
