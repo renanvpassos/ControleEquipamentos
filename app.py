@@ -908,53 +908,62 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         # Coluna 1: Foto (Esquerda) | Coluna 2: Dados Baixa (Centro) | Coluna 3: Dados Equipamento (Direita)
                         col_foto, col_dados_baixa, col_dados_equip = st.columns([1.5, 2, 1.5])
                         
-                        # --- COLUNA DA ESQUERDA: FOTOS ---
+                        # --- COLUNA DA ESQUERDA: FOTOS VIA BUCKET ---
                         with col_foto:
-                            lista_fotos = linha.get("fotos")
+                            lista_fotos_raw = linha.get("fotos")
+                            urls_geradas = []
                             
-                            # Tratamento e limpeza das URLs vindas do banco
-                            urls_limpas = []
-                            if lista_fotos and isinstance(lista_fotos, list):
-                                for item in lista_fotos:
-                                    if isinstance(item, dict) and "public_url" in item:
-                                        urls_limpas.append(item["public_url"])
-                                    elif isinstance(item, str):
-                                        # Se guardou como string do dicionário ex: "{'public_url': 'https...'}"
-                                        if "public_url" in item:
-                                            try:
-                                                import ast
-                                                convertido = ast.literal_eval(item)
-                                                if isinstance(convertido, dict) and "public_url" in convertido:
-                                                    urls_limpas.append(convertido["public_url"])
-                                            except:
-                                                pass
-                                        else:
-                                            urls_limpas.append(item)
+                            if lista_fotos_raw and isinstance(lista_fotos_raw, list):
+                                for item in lista_fotos_raw:
+                                    # Extrai o caminho limpo (path) independente de como foi salvo
+                                    caminho_limpo = None
+                                    item_str = str(item)
+                                    
+                                    # Se no banco estiver a URL inteira, extraímos apenas a parte que importa do path (depois de /public/)
+                                    if "object/public/" in item_str:
+                                        try:
+                                            # Remove tudo até o nome do bucket para obter o path interno do arquivo
+                                            caminho_limpo = item_str.split(f"object/public/{BUCKET_FOTOS}/")[-1].replace("'", "").replace('"', '').replace('}', '')
+                                        except:
+                                            caminho_limpo = None
+                                    else:
+                                        # Se já for o path puro (ex: 'baixas/ST123/...') limpa resíduos de dicionário se houver
+                                        caminho_limpo = item_str.replace("{'public_url': '", "").replace("'}", "").strip()
+                                    
+                                    # Gera a URL fresca e pública direto do seu BUCKET_FOTOS
+                                    if caminho_limpo:
+                                        try:
+                                            res_url = supabase.storage.from_(BUCKET_FOTOS).get_public_url(caminho_limpo)
+                                            # Trata caso o retorno seja o objeto completo do SDK ou string direta
+                                            url_final = res_url.get("public_url", res_url) if isinstance(res_url, dict) else res_url
+                                            urls_geradas.append(url_final)
+                                        except Exception as e:
+                                            pass
 
-                            if urls_limpas:
-                                # Chave para controlar qual foto exibir se houver mais de uma
+                            if urls_geradas:
+                                # Controle do carrossel/índice de fotos
                                 chave_index_foto = f"idx_foto_{id_baixa}"
                                 if chave_index_foto not in st.session_state:
                                     st.session_state[chave_index_foto] = 0
                                 
                                 idx_atual = st.session_state[chave_index_foto]
-                                if idx_atual >= len(urls_limpas):
+                                if idx_atual >= len(urls_geradas):
                                     idx_atual = 0
                                     st.session_state[chave_index_foto] = 0
                                 
-                                # Exibe a foto atual extraída
-                                st.image(urls_limpas[idx_atual], caption=f"Foto {idx_atual + 1} de {len(urls_limpas)}", use_container_width=True)
+                                # Renderiza a imagem perfeitamente na coluna esquerda
+                                st.image(urls_geradas[idx_atual], caption=f"Foto {idx_atual + 1} de {len(urls_geradas)}", use_container_width=True)
                                 
-                                # Se houver mais de uma foto, mostra pequenos botões de navegação abaixo dela
-                                if len(urls_limpas) > 1:
+                                # Botões de navegação se houver mais de uma foto
+                                if len(urls_geradas) > 1:
                                     c_ant, c_prox = st.columns(2)
                                     with c_ant:
                                         if st.button("◀ Ant.", key=f"ant_{id_baixa}", use_container_width=True):
-                                            st.session_state[chave_index_foto] = (idx_atual - 1) % len(urls_limpas)
+                                            st.session_state[chave_index_foto] = (idx_atual - 1) % len(urls_geradas)
                                             st.rerun()
                                     with c_prox:
                                         if st.button("Prox. ▶", key=f"prox_{id_baixa}", use_container_width=True):
-                                            st.session_state[chave_index_foto] = (idx_atual + 1) % len(urls_limpas)
+                                            st.session_state[chave_index_foto] = (idx_atual + 1) % len(urls_geradas)
                                             st.rerun()
                             else:
                                 st.info("Sem foto cadastrada.")
