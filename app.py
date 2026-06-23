@@ -7,6 +7,45 @@ from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
+import ast
+import json
+
+def obter_url_foto_supabase(valor):
+    if valor is None or pd.isna(valor):
+        return None
+
+    if isinstance(valor, list):
+        if not valor:
+            return None
+        foto = valor[0]
+    else:
+        texto = str(valor).strip()
+
+        if texto in ["", "None", "nan", "[]"]:
+            return None
+
+        if texto.startswith("[") and texto.endswith("]"):
+            try:
+                lista = json.loads(texto)
+                foto = lista[0] if lista else None
+            except Exception:
+                try:
+                    lista = ast.literal_eval(texto)
+                    foto = lista[0] if lista else None
+                except Exception:
+                    foto = texto
+        else:
+            foto = texto
+
+    if not foto:
+        return None
+
+    foto = str(foto).strip()
+
+    if foto.startswith("http"):
+        return foto
+
+    return supabase.storage.from_("equipamentos-fotos").get_public_url(foto)
 
 # --- Configuração Supabase ---
 @st.cache_resource
@@ -546,12 +585,17 @@ elif menu == "Lista de Equipamentos":
                         with col:
                             with st.container(border=True):
                                 foto = item.get("fotos")
-
+                            
                                 if foto and str(foto).strip() not in ["", "None", "nan"]:
+                                    foto = str(foto).strip()
+                            
+                                    if not foto.startswith("http"):
+                                        foto = supabase.storage.from_("equipamentos-fotos").get_public_url(foto)
+                            
                                     st.image(foto, use_container_width=True)
                                 else:
                                     st.info("Sem foto cadastrada")
-
+                            
                                 st.markdown(f"**Código:** {item.get('codigo_controle') or '-'}")
                                 st.markdown(f"**Tipo:** {item.get('tipo') or '-'}")
                                 st.markdown(f"**Marca/Modelo:** {item.get('marca') or '-'} / {item.get('modelo') or '-'}")
