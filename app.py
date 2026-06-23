@@ -708,6 +708,50 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                 st.success("Equipamento removido do banco de dados!")
                 st.rerun()
 
+
+
+# --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) --- elif menu == "Lista de…
+para evitar pesar demais com as imagens o app, limitar a 15 equipamentos por pagina no meu codigo abaixo, sendo possivel passar para outra pagina que mostrará mais 15 equipamentos.
+14:37
+
+Trabalhou por 1m 26s
+Pronto. Criei a versão paginada aqui:
+
+lista_equipamentos_paginada.py
+
+A alteração principal foi:
+
+limita a exibição a 15 equipamentos por página;
+adiciona botões Anterior e Proxima;
+reseta para a página 1 quando mudar pesquisa/filtro;
+mantém exportação Excel/PDF usando todos os registros filtrados, não só a página atual.
+O ponto central é este:
+
+itens_por_pagina = 15
+total_paginas = max(1, (total_registros + itens_por_pagina - 1) // itens_por_pagina)
+
+inicio = (pagina_atual - 1) * itens_por_pagina
+fim = inicio + itens_por_pagina
+df_pagina = df_exibicao.iloc[inicio:fim]
+E o for agora percorre df_pagina, não df_exibicao, para carregar só 15 cards/imagens por vez.
+
+
+Editado lista_equipamentos_paginada.py
++167
+-0
+14:39
+
+
+
+
+Saídas
+Ainda não há artefatos
+
+Fontes
+Ainda não há fontes
+par
+outputs
+lista_equipamentos_paginada.py
 # --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) ---
 elif menu == "Lista de Equipamentos":
     st.header("Lista Geral de Equipamentos")
@@ -808,6 +852,73 @@ elif menu == "Lista de Equipamentos":
                     st.markdown(
                         f"<div style='text-align:center;'>Pagina {pagina_atual} de {total_paginas}</div>",
                         unsafe_allow_html=True,
+                    )
+
+                with col_pag3:
+                    if st.button(
+                        "Proxima",
+                        disabled=pagina_atual >= total_paginas,
+                        key="btn_pagina_proxima_equipamentos",
+                    ):
+                        st.session_state.pagina_lista_equipamentos = pagina_atual + 1
+                        st.rerun()
+
+                for i in range(0, len(df_pagina), 4):
+                    cols = st.columns(4)
+
+                    for col, (_, item) in zip(cols, df_pagina.iloc[i:i + 4].iterrows()):
+                        with col:
+                            with st.container(border=True):
+                                codigo_card = str(item.get("codigo_controle") or "sem_codigo").replace(" ", "_").replace("/", "_")
+                                fotos = obter_lista_fotos(item.get("fotos"))
+
+                                caminhos_fotos = []
+                                for foto in fotos:
+                                    caminho_foto = obter_caminho_bucket(foto)
+                                    if caminho_foto:
+                                        caminhos_fotos.append(caminho_foto)
+
+                                if caminhos_fotos:
+                                    try:
+                                        mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
+                                        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                                    except Exception:
+                                        st.warning("Foto encontrada, mas nao foi possivel carregar.")
+                                else:
+                                    st.info("Sem foto cadastrada")
+
+                                st.markdown(f"**Codigo:** {item.get('codigo_controle') or '-'}")
+                                st.markdown(f"**Tipo:** {item.get('tipo') or '-'}")
+                                st.markdown(f"**Marca/Modelo:** {item.get('marca') or '-'} / {item.get('modelo') or '-'}")
+                                st.markdown(f"**Service Tag:** {item.get('service_tag') or '-'}")
+                                st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
+                                st.markdown(f"**Status:** {item.get('status') or '-'}")
+
+                                descricao = item.get("descricao")
+                                if descricao and str(descricao).strip() not in ["", "None", "nan"]:
+                                    st.caption(str(descricao))
+
+                col_btn1, col_btn2, _ = st.columns([1, 1, 6])
+
+                with col_btn1:
+                    dados_excel = gerar_excel(df_exibicao)
+                    st.download_button(
+                        label="Extrair em EXCEL",
+                        data=dados_excel,
+                        file_name="lista_equipamentos.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    )
+
+                with col_btn2:
+                    dados_pdf = gerar_pdf(df_exibicao, "Relacao de Equipamentos - Lista Geral")
+                    st.download_button(
+                        label="Extrair em PDF",
+                        data=dados_pdf,
+                        file_name="lista_equipamentos.pdf",
+                        mime="application/pdf",
+                    )
+    else:
+        st.info("Nenhum equipamento cadastrado ate o momento.")
 
 # --- 4. RELATÓRIOS CORRIGIDO (Apenas Master) ---
 elif menu == "Relatórios" and st.session_state.user_role == "Master":
