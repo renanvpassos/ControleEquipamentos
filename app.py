@@ -81,21 +81,17 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
             mime = "image/webp"
 
         img_base64 = base64.b64encode(bytes_foto).decode("utf-8")
-        slides.append({
-            "src": f"data:{mime};base64,{img_base64}",
-            "base64": img_base64,
-            "mime": mime,
-        })
+        slides.append(f"data:{mime};base64,{img_base64}")
 
-    slides_js = json.dumps([slide["src"] for slide in slides])
+    slides_js = json.dumps(slides)
 
     components.html(
         f"""
         <div class="carousel" id="carousel-{codigo_card}">
-            <img id="img-{codigo_card}" src="" />
+            <img id="img-{codigo_card}" src="" onclick="openCurrent_{codigo_card}()" />
 
-            <button class="arrow left" onclick="prev_{codigo_card}()">‹</button>
-            <button class="arrow right" onclick="next_{codigo_card}()">›</button>
+            <button class="arrow left" onclick="prev_{codigo_card}(event)">‹</button>
+            <button class="arrow right" onclick="next_{codigo_card}(event)">›</button>
         </div>
 
         <script>
@@ -115,14 +111,46 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
                 }}
             }}
 
-            function prev_{codigo_card}() {{
+            function prev_{codigo_card}(event) {{
+                event.stopPropagation();
                 index_{codigo_card} = (index_{codigo_card} - 1 + slides_{codigo_card}.length) % slides_{codigo_card}.length;
                 render_{codigo_card}();
             }}
 
-            function next_{codigo_card}() {{
+            function next_{codigo_card}(event) {{
+                event.stopPropagation();
                 index_{codigo_card} = (index_{codigo_card} + 1) % slides_{codigo_card}.length;
                 render_{codigo_card}();
+            }}
+
+            function openCurrent_{codigo_card}() {{
+                const win = window.open();
+                win.document.write(`
+                    <html>
+                        <head>
+                            <title>Foto do equipamento</title>
+                            <style>
+                                body {{
+                                    margin: 0;
+                                    background: #111;
+                                    width: 100vw;
+                                    height: 100vh;
+                                    display: flex;
+                                    align-items: center;
+                                    justify-content: center;
+                                }}
+                                img {{
+                                    max-width: 96vw;
+                                    max-height: 96vh;
+                                    object-fit: contain;
+                                }}
+                            </style>
+                        </head>
+                        <body>
+                            <img src="${{slides_{codigo_card}[index_{codigo_card}]}}" />
+                        </body>
+                    </html>
+                `);
             }}
 
             render_{codigo_card}();
@@ -143,6 +171,7 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
                 height: 100%;
                 object-fit: cover;
                 display: block;
+                cursor: zoom-in;
             }}
 
             .arrow {{
@@ -179,8 +208,6 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
         """,
         height=232,
     )
-
-    return slides[0]["base64"], slides[0]["mime"]
     
 # --- Configuração Supabase ---
 @st.cache_resource
