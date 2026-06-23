@@ -872,17 +872,15 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
     with tab_listar:
         pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
         
-        # 1. Buscamos todas as baixas
+        # 1. Busca as baixas e os equipamentos
         res_baixas = supabase.table("baixas").select("*").order("data_baixa", desc=True).execute()
         
         if res_baixas.data:
             df_baixas = pd.DataFrame(res_baixas.data)
             
-            # 2. Buscamos todos os equipamentos para fazer o cruzamento em memória
             res_equips = supabase.table("equipamentos").select("*").execute()
             df_equips = pd.DataFrame(res_equips.data) if res_equips.data else pd.DataFrame()
             
-            # Filtro de pesquisa textual simples
             if pesquisa_baixa:
                 p_lower = pesquisa_baixa.lower()
                 mascara = df_baixas.astype(str).apply(
@@ -896,56 +894,71 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                 # Loop para renderizar cada baixa
                 for _, linha in df_baixas.iterrows():
                     st_atual = linha["service_tag"]
+                    id_baixa = linha.get("id", "sem_id")
                     
-                    # Localiza os dados do equipamento correspondente no DataFrame de equipamentos
+                    # Localiza os dados do equipamento correspondente
                     dados_equip = {}
                     if not df_equips.empty:
                         equip_filtrado = df_equips[df_equips["service_tag"].astype(str).str.upper() == str(st_atual).upper()]
                         if not equip_filtrado.empty:
                             dados_equip = equip_filtrado.iloc[0].to_dict()
                     
-                    # Cria um container visual para cada registro de baixa
+                    # --- CONTAINER PRINCIPAL DA BAIXA ---
                     with st.container(border=True):
-                        col1, col2 = st.columns([2, 1])
+                        # Coluna 1: Foto (Esquerda) | Coluna 2: Dados Baixa (Centro) | Coluna 3: Dados Equipamento (Direita)
+                        col_foto, col_dados_baixa, col_dados_equip = st.columns([1.5, 2, 1.5])
                         
-                        with col1:
+                        # --- COLUNA DA ESQUERDA: FOTOS ---
+                        with col_foto:
+                            lista_fotos = linha.get("fotos")
+                            if lista_fotos and isinstance(lista_fotos, list) and len(lista_fotos) > 0:
+                                # Chave para controlar qual foto exibir se houver mais de uma
+                                chave_index_foto = f"idx_foto_{id_baixa}"
+                                if chave_index_foto not in st.session_state:
+                                    st.session_state[chave_index_foto] = 0
+                                
+                                idx_atual = st.session_state[chave_index_foto]
+                                # Garante que o índice não estoure se a lista mudar
+                                if idx_atual >= len(lista_fotos):
+                                    idx_atual = 0
+                                    st.session_state[chave_index_foto] = 0
+                                
+                                # Exibe a foto atual ajustada ao tamanho do container da esquerda
+                                st.image(lista_fotos[idx_atual], caption=f"Foto {idx_atual + 1} de {len(lista_fotos)}", use_container_width=True)
+                                
+                                # Se houver mais de uma foto, mostra pequenos botões de navegação abaixo dela
+                                if len(lista_fotos) > 1:
+                                    c_ant, c_prox = st.columns(2)
+                                    with c_ant:
+                                        if st.button("◀ Ant.", key=f"ant_{id_baixa}", use_container_width=True):
+                                            st.session_state[chave_index_foto] = (idx_atual - 1) % len(lista_fotos)
+                                            st.rerun()
+                                    with c_prox:
+                                        if st.button("Prox. ▶", key=f"prox_{id_baixa}", use_container_width=True):
+                                            st.session_state[chave_index_foto] = (idx_atual + 1) % len(lista_fotos)
+                                            st.rerun()
+                            else:
+                                # Caixa cinza placeholder caso não tenha foto cadastrada
+                                st.info("Sem foto cadastrada.")
+                        
+                        # --- COLUNA DO CENTRO: DADOS DA BAIXA ---
+                        with col_dados_baixa:
                             st.markdown(f"### Baixa: {st_atual}")
                             st.markdown(f"**Motivo:** {str(linha['motivo']).capitalize()}")
                             st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
                             st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
                             if linha.get('observacao'):
-                                st.markdown(f"**Observação:** {linha['observacao']}")
+                                st.markdown(f"**Observação:** *{linha['observacao']}*")
                         
-                        with col2:
-                            st.markdown("**Dados do Equipamento:**")
+                        # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO ---
+                        with col_dados_equip:
+                            st.markdown("<p style='font-weight: bold; margin-bottom: 5px;'>Dados do Equipamento</p>", unsafe_html=True)
                             if dados_equip:
-                                st.markdown(f"* **Tipo:** {dados_equip.get('tipo', 'N/A')}")
-                                st.markdown(f"* **Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
-                                st.markdown(f"* **Status Atual:** {dados_equip.get('status', 'N/A')}")
+                                st.markdown(f"**Tipo:** {dados_equip.get('tipo', 'N/A')}")
+                                st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
+                                st.markdown(f"**Status:** {dados_equip.get('status', 'N/A')}")
                             else:
-                                st.markdown("*Dados do equipamento não localizados no banco.*")
-
-                        # --- SEÇÃO DE FOTOS INTERATIVAS ---
-                        lista_fotos = linha.get("fotos")
-                        if lista_fotos and isinstance(lista_fotos, list) and len(lista_fotos) > 0:
-                            st.write("---")
-                            st.markdown("**📸 Fotos anexadas:**")
-                            
-                            cols_fotos = st.columns(len(lista_fotos))
-                            for idx, url in enumerate(lista_fotos):
-                                with cols_fotos[idx]:
-                                    chave_foto = f"btn_foto_{linha.get('id', idx)}_{idx}" 
-                                    
-                                    if st.button(f"Ver Foto {idx + 1}", key=chave_foto):
-                                        st.session_state[f"ver_{chave_foto}"] = True
-                                    
-                                    if st.session_state.get(f"ver_{chave_foto}", False):
-                                        st.image(url, caption=f"Foto {idx + 1} - ST: {st_atual}", use_container_width=True)
-                                        if st.button("Fechar Foto", key=f"Fechar_{chave_foto}"):
-                                            st.session_state[f"ver_{chave_foto}"] = False
-                                            st.rerun()
-                        else:
-                            st.caption("Nenhuma foto anexada a esta baixa.")
+                                st.caption("Equipamento não localizado no banco.")
         else:
             st.info("Nenhum registro de baixa inserido até o momento.")
 
