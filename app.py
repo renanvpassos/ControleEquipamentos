@@ -911,31 +911,50 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         # --- COLUNA DA ESQUERDA: FOTOS ---
                         with col_foto:
                             lista_fotos = linha.get("fotos")
-                            if lista_fotos and isinstance(lista_fotos, list) and len(lista_fotos) > 0:
+                            
+                            # Tratamento e limpeza das URLs vindas do banco
+                            urls_limpas = []
+                            if lista_fotos and isinstance(lista_fotos, list):
+                                for item in lista_fotos:
+                                    if isinstance(item, dict) and "public_url" in item:
+                                        urls_limpas.append(item["public_url"])
+                                    elif isinstance(item, str):
+                                        # Se guardou como string do dicionário ex: "{'public_url': 'https...'}"
+                                        if "public_url" in item:
+                                            try:
+                                                import ast
+                                                convertido = ast.literal_eval(item)
+                                                if isinstance(convertido, dict) and "public_url" in convertido:
+                                                    urls_limpas.append(convertido["public_url"])
+                                            except:
+                                                pass
+                                        else:
+                                            urls_limpas.append(item)
+
+                            if urls_limpas:
                                 # Chave para controlar qual foto exibir se houver mais de uma
                                 chave_index_foto = f"idx_foto_{id_baixa}"
                                 if chave_index_foto not in st.session_state:
                                     st.session_state[chave_index_foto] = 0
                                 
                                 idx_atual = st.session_state[chave_index_foto]
-                                # Garante que o índice não estoure se a lista mudar
-                                if idx_atual >= len(lista_fotos):
+                                if idx_atual >= len(urls_limpas):
                                     idx_atual = 0
                                     st.session_state[chave_index_foto] = 0
                                 
-                                # Exibe a foto atual ajustada ao tamanho do container da esquerda
-                                st.image(lista_fotos[idx_atual], caption=f"Foto {idx_atual + 1} de {len(lista_fotos)}", use_container_width=True)
+                                # Exibe a foto atual extraída
+                                st.image(urls_limpas[idx_atual], caption=f"Foto {idx_atual + 1} de {len(urls_limpas)}", use_container_width=True)
                                 
                                 # Se houver mais de uma foto, mostra pequenos botões de navegação abaixo dela
-                                if len(lista_fotos) > 1:
+                                if len(urls_limpas) > 1:
                                     c_ant, c_prox = st.columns(2)
                                     with c_ant:
                                         if st.button("◀ Ant.", key=f"ant_{id_baixa}", use_container_width=True):
-                                            st.session_state[chave_index_foto] = (idx_atual - 1) % len(lista_fotos)
+                                            st.session_state[chave_index_foto] = (idx_atual - 1) % len(urls_limpas)
                                             st.rerun()
                                     with c_prox:
                                         if st.button("Prox. ▶", key=f"prox_{id_baixa}", use_container_width=True):
-                                            st.session_state[chave_index_foto] = (idx_atual + 1) % len(lista_fotos)
+                                            st.session_state[chave_index_foto] = (idx_atual + 1) % len(urls_limpas)
                                             st.rerun()
                             else:
                                 st.info("Sem foto cadastrada.")
@@ -951,7 +970,6 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         
                         # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO ---
                         with col_dados_equip:
-                            # Corrigido para markdown nativo, removendo o parâmetro incorreto
                             st.markdown("**Dados do Equipamento**") 
                             if dados_equip:
                                 st.markdown(f"**Tipo:** {dados_equip.get('tipo', 'N/A')}")
