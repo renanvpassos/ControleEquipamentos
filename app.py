@@ -950,7 +950,7 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                             st.markdown(f"**Motivo:** {str(linha['motivo']).capitalize()}")
                             st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
                             st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
-                            if línea.get('observacao'):
+                            if linha.get('observacao'):
                                 st.markdown(f"**Observação:** *{linha['observacao']}*")
                         
                         # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO ---
