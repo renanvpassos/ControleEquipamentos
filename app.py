@@ -895,6 +895,7 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                 for _, linha in df_baixas.iterrows():
                     st_atual = linha["service_tag"]
                     id_baixa = linha.get("id", "sem_id")
+                    baixa_finalizada = linha.get("status_baixa") == "Finalizada"
                     
                     # Localiza os dados do equipamento correspondente
                     dados_equip = {}
@@ -903,16 +904,34 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         if not equip_filtrado.empty:
                             dados_equip = equip_filtrado.iloc[0].to_dict()
                     
+                    # --- CSS CONDICIONAL PARA TRANSPARÊNCIA ---
+                    # Injeta uma classe CSS com opacidade de 0.3 (30%) se a baixa estiver finalizada
+                    if baixa_finalizada:
+                        st.markdown(
+                            f"""
+                            <style>
+                            div[data-testid="stVerticalBlockBorderWithHeader"][id="container_{id_baixa}"] {{
+                                opacity: 0.3 !important;
+                                pointer-events: none; /* Desabilita interações visuais adicionais no card */
+                            }}
+                            </style>
+                            """, 
+                            unsafe_allow_html=True
+                        )
+                    
                     # --- CONTAINER PRINCIPAL DA BAIXA ---
+                    # Atribuímos um "id" fictício usando markdown logo abaixo para o CSS localizá-lo se necessário,
+                    # ou confiamos na estrutura sequencial do Streamlit.
                     with st.container(border=True):
+                        # Tag invisível para o CSS capturar o container atual (gambiarra saudável de Streamlit)
+                        st.markdown(f'<div id="container_{id_baixa}"></div>', unsafe_allow_html=True)
+                        
                         # Coluna 1: Foto (Esquerda) | Coluna 2: Dados Baixa (Centro) | Coluna 3: Dados Equipamento (Direita)
                         col_foto, col_dados_baixa, col_dados_equip = st.columns([1.5, 2, 1.5])
                         
-                        # --- COLUNA DA ESQUERDA: FOTOS UTILIZANDO O CARROSSEL NATIVO ---
+                        # --- COLUNA DA ESQUERDA: FOTOS ---
                         with col_foto:
                             codigo_card = f"baixa_{str(id_baixa)}"
-                            
-                            # Utiliza as funções auxiliares já declaradas no seu código
                             fotos_raw = obter_lista_fotos(linha.get("fotos"))
                             caminhos_fotos = []
                             
@@ -923,7 +942,6 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                             
                             if caminhos_fotos:
                                 try:
-                                    # Invoca a mesma função de carrossel usada na lista geral
                                     mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
                                     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
                                 except Exception:
@@ -934,6 +952,8 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         # --- COLUNA DO CENTRO: DADOS DA BAIXA ---
                         with col_dados_baixa:
                             st.markdown(f"### Baixa: {st_atual}")
+                            if baixa_finalizada:
+                                st.success("✅ **BAIXA CONCLUÍDA / EQUIPAMENTO REATIVADO**")
                             st.markdown(f"**Motivo:** {str(linha['motivo']).capitalize()}")
                             st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
                             st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
@@ -946,27 +966,27 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                             if dados_equip:
                                 st.markdown(f"**Tipo:** {dados_equip.get('tipo', 'N/A')}")
                                 st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
-                                st.markdown(f"**Status:** {dados_equip.get('status', 'N/A')}")
+                                # Se o equipamento foi reativado no banco, o status dele voltará a ser "Ativo"
+                                st.markdown(f"**Status Atual:** {dados_equip.get('status', 'N/A')}")
                                 
                                 # ---------------------------------------------------------
-                                # NOVA FUNÇÃO: REATIVAR EXCLUSIVA PARA O CARGO "MASTER"
+                                # CONDIÇÃO: SÓ MOSTRA O BOTÃO SE FOR MASTER E SE A BAIXA NÃO ESTIVER FINALIZADA
                                 # ---------------------------------------------------------
-                                if st.session_state.user_role == "Master":
+                                if st.session_state.user_role == "Master" and not baixa_finalizada:
                                     st.markdown("---")
-                                    # Chave única baseada no ID da baixa para evitar conflitos no Streamlit
                                     if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
-                                        with st.spinner("Reativando equipamento..."):
+                                        with st.spinner("Finalizando baixa e reativando equipamento..."):
                                             try:
-                                                # 1. Atualiza o status do equipamento para Ativo novamente
+                                                # 1. Altera o status do equipamento de volta para Ativo
                                                 supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
                                                 
-                                                # 2. Remove o registro da tabela de baixas
-                                                supabase.table("baixas").delete().eq("id", id_baixa).execute()
+                                                # 2. Entende que a baixa foi finalizada (atualiza a coluna em vez de deletar)
+                                                supabase.table("baixas").update({"status_baixa": "Finalizada"}).eq("id", id_baixa).execute()
                                                 
-                                                # 3. Registra a ação no Log do sistema
-                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" reativou o equipamento ST: {st_atual} resolvendo a baixa.')
+                                                # 3. Registra Log do sistema
+                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" finalizou a baixa ID {id_baixa} e reativou o equipamento ST: {st_atual}.')
                                                 
-                                                st.success(f"Equipamento {st_atual} reativado com sucesso!")
+                                                st.success(f"Equipamento {st_atual} reativado e baixa finalizada!")
                                                 import time
                                                 time.sleep(1.5)
                                                 st.rerun()
