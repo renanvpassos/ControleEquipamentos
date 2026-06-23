@@ -631,16 +631,51 @@ elif menu == "Lista de Equipamentos":
                     for col, (_, item) in zip(cols, df_exibicao.iloc[i:i + 3].iterrows()):
                         with col:
                             with st.container(border=True):
-                                foto = obter_primeira_foto(item.get("fotos"))
-                                caminho_foto = obter_caminho_bucket(foto)
+                                codigo_card = str(item.get("codigo_controle") or "sem_codigo")
+                                fotos = obter_lista_fotos(item.get("fotos"))
                                 
-                                if caminho_foto:
-                                    try:
-                                        bytes_foto = supabase.storage.from_(BUCKET_FOTOS).download(caminho_foto)
-                                        st.image(bytes_foto, use_container_width=True)
-                                    except Exception as e:
-                                        st.warning("Foto encontrada, mas não foi possível carregar do bucket.")
-                                        st.caption(str(foto))
+                                if fotos:
+                                    chave_slide = f"slide_foto_{codigo_card}"
+                                
+                                    if chave_slide not in st.session_state:
+                                        st.session_state[chave_slide] = 0
+                                
+                                    total_fotos = len(fotos)
+                                
+                                    if st.session_state[chave_slide] >= total_fotos:
+                                        st.session_state[chave_slide] = 0
+                                
+                                    foto_atual = fotos[st.session_state[chave_slide]]
+                                    caminho_foto = obter_caminho_bucket(foto_atual)
+                                
+                                    if caminho_foto:
+                                        try:
+                                            html_img = imagem_bucket_para_html(caminho_foto)
+                                            st.markdown(html_img, unsafe_allow_html=True)
+                                
+                                            if total_fotos > 1:
+                                                col_ant, col_count, col_prox = st.columns([1, 2, 1])
+                                
+                                                with col_ant:
+                                                    if st.button("←", key=f"ant_{codigo_card}"):
+                                                        st.session_state[chave_slide] = (st.session_state[chave_slide] - 1) % total_fotos
+                                                        st.rerun()
+                                
+                                                with col_count:
+                                                    st.markdown(
+                                                        f"<p style='text-align:center; margin-top:8px;'>{st.session_state[chave_slide] + 1} / {total_fotos}</p>",
+                                                        unsafe_allow_html=True
+                                                    )
+                                
+                                                with col_prox:
+                                                    if st.button("→", key=f"prox_{codigo_card}"):
+                                                        st.session_state[chave_slide] = (st.session_state[chave_slide] + 1) % total_fotos
+                                                        st.rerun()
+                                
+                                        except Exception:
+                                            st.warning("Foto encontrada, mas não foi possível carregar.")
+                                    else:
+                                        st.info("Sem foto cadastrada")
                                 else:
                                     st.info("Sem foto cadastrada")
                             
