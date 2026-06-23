@@ -11,11 +11,11 @@ import ast
 import json
 
 def obter_url_foto_supabase(valor):
-    if valor is None or pd.isna(valor):
+    if valor is None:
         return None
 
     if isinstance(valor, list):
-        if not valor:
+        if len(valor) == 0:
             return None
         foto = valor[0]
     else:
@@ -37,10 +37,13 @@ def obter_url_foto_supabase(valor):
         else:
             foto = texto
 
-    if not foto:
+    if foto is None:
         return None
 
     foto = str(foto).strip()
+
+    if foto in ["", "None", "nan", "[]"]:
+        return None
 
     if foto.startswith("http"):
         return foto
@@ -584,15 +587,10 @@ elif menu == "Lista de Equipamentos":
                     for col, (_, item) in zip(cols, df_exibicao.iloc[i:i + 3].iterrows()):
                         with col:
                             with st.container(border=True):
-                                foto = item.get("fotos")
-                            
-                                if foto and str(foto).strip() not in ["", "None", "nan"]:
-                                    foto = str(foto).strip()
-                            
-                                    if not foto.startswith("http"):
-                                        foto = supabase.storage.from_("equipamentos-fotos").get_public_url(foto)
-                            
-                                    st.image(foto, use_container_width=True)
+                                foto_url = obter_url_foto_supabase(item.get("fotos"))
+
+                                if foto_url:
+                                    st.image(foto_url, use_container_width=True)
                                 else:
                                     st.info("Sem foto cadastrada")
                             
