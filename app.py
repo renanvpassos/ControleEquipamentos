@@ -234,7 +234,7 @@ if menu == "Cadastrar Equipamento":
     
     with st.form("cadastro_equipamento_form"):
         tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"])
-        marca = st.selectbox("Marca (Obrigatório)*", ["", "Estação", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo"])
+        marca = st.selectbox("Marca (Obrigatório)*", ["", "Estação", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO"])
         modelo = st.text_input("Modelo (Opcional)")
         colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
@@ -388,7 +388,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
             ed_tipo_idx = tipos_padrao.index(equip_selecionado['tipo']) if equip_selecionado['tipo'] in tipos_padrao else 0
             ed_tipo = st.selectbox("Tipo de Equipamento*", tipos_padrao, index=ed_tipo_idx)
             
-            marcas_padrao = ["Estação", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo"]
+            marcas_padrao = ["Estação", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO"]
             ed_marca_idx = marcas_padrao.index(equip_selecionado['marca']) if equip_selecionado['marca'] in marcas_padrao else 0
             ed_marca = st.selectbox("Marca*", marcas_padrao, index=ed_marca_idx)
             
