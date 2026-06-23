@@ -904,14 +904,9 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                             dados_equip = equip_filtrado.iloc[0].to_dict()
                     
                     status_atual_equip = dados_equip.get('status', 'N/A')
-                    baixa_resolvida = (status_atual_equip == "Ativo")
-                    
-                    # Estilo CSS para transparência se o equipamento já foi resolvido por outro meio
-                    estilo_container = "opacity: 0.3; pointer-events: none;" if baixa_resolvida else "opacity: 1;"
                     
                     # --- CONTAINER PRINCIPAL DA BAIXA ---
                     with st.container(border=True):
-                        st.markdown(f'<div style="{estilo_container}">', unsafe_allow_html=True)
                         col_foto, col_dados_baixa, col_dados_equip = st.columns([1.5, 2, 1.5])
                         
                         # --- COLUNA DA ESQUERDA: FOTOS ---
@@ -936,8 +931,6 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         # --- COLUNA DO CENTRO: DADOS DA BAIXA ---
                         with col_dados_baixa:
                             st.markdown(f"### Baixa: {st_atual}")
-                            if baixa_resolvida:
-                                st.success("✅ **EQUIPAMENTO JÁ SE ENCONTRA ATIVO**")
                             st.markdown(f"**Motivo:** {str(linha['motivo']).capitalize()}")
                             st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
                             st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
@@ -952,31 +945,29 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                 st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
                                 st.markdown(f"**Status:** {status_atual_equip}")
                                 
-                                # SÓ MOSTRA O BOTÃO SE FOR MASTER E SE FOR INATIVO
+                                # SÓ MOSTRA O BOTÃO SE FOR MASTER E SE O EQUIPAMENTO ESTIVER INATIVO
                                 if st.session_state.user_role == "Master" and status_atual_equip == "Inativo":
                                     st.markdown("---")
                                     if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
-                                        with st.spinner("Reativando equipamento e limpando painel..."):
+                                        with st.spinner("Reativando equipamento e removendo da lista..."):
                                             try:
-                                                # 1. Volta o equipamento para Ativo
+                                                # 1. Altera o equipamento correspondente de volta para "Ativo"
                                                 supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
                                                 
-                                                # 2. Em vez de apagar fisicamente do banco, ocultamos (arquivamos) para fins de relatório
+                                                # 2. Arquiva esta baixa específica para sumir da aba Pesquisar Baixas
                                                 supabase.table("baixas").update({"arquivado": True}).eq("id", id_baixa).execute()
                                                 
-                                                # 3. Salva no log do sistema
-                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" finalizou e arquivou a baixa do equipamento ST: {st_atual}.')
+                                                # 3. Registra a reativação no Log do sistema
+                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" finalizou e ocultou a baixa do equipamento ST: {st_atual}.')
                                                 
-                                                st.success(f"Equipamento {st_atual} reativado com sucesso!")
+                                                st.success(f"Equipamento {st_atual} reativado e baixa removida do painel!")
                                                 import time
-                                                time.sleep(1.5)
-                                                st.rerun()
+                                                time.sleep(1)
+                                                st.rerun() # Atualiza a tela para sumir o card instantaneamente
                                             except Exception as e:
                                                 st.error(f"Erro ao reativar equipamento: {e}")
                             else:
                                 st.caption("Equipamento não localizado no banco.")
-                        
-                        st.markdown('</div>', unsafe_allow_html=True)
         else:
             st.info("Nenhum registro de baixa ativo no momento.")
 
