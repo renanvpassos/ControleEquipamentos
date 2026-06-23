@@ -10,45 +10,52 @@ from reportlab.lib import colors
 import ast
 import json
 
-def obter_url_foto_supabase(valor):
+BUCKET_FOTOS = "equipamentos-fotos"
+
+def obter_primeira_foto(valor):
     if valor is None:
         return None
 
     if isinstance(valor, list):
-        if len(valor) == 0:
-            return None
-        foto = valor[0]
-    else:
-        texto = str(valor).strip()
+        return valor[0] if valor else None
 
-        if texto in ["", "None", "nan", "[]"]:
-            return None
+    texto = str(valor).strip()
 
-        if texto.startswith("[") and texto.endswith("]"):
+    if texto in ["", "None", "nan", "[]"]:
+        return None
+
+    if texto.startswith("[") and texto.endswith("]"):
+        try:
+            lista = json.loads(texto)
+            return lista[0] if lista else None
+        except Exception:
             try:
-                lista = json.loads(texto)
-                foto = lista[0] if lista else None
+                lista = ast.literal_eval(texto)
+                return lista[0] if lista else None
             except Exception:
-                try:
-                    lista = ast.literal_eval(texto)
-                    foto = lista[0] if lista else None
-                except Exception:
-                    foto = texto
-        else:
-            foto = texto
+                return texto
 
-    if foto is None:
+    return texto
+
+
+def obter_caminho_bucket(foto):
+    if not foto:
         return None
 
     foto = str(foto).strip()
 
-    if foto in ["", "None", "nan", "[]"]:
-        return None
+    marcador_publico = f"/storage/v1/object/public/{BUCKET_FOTOS}/"
+    if marcador_publico in foto:
+        return foto.split(marcador_publico, 1)[1]
+
+    marcador_bucket = f"{BUCKET_FOTOS}/"
+    if marcador_bucket in foto:
+        return foto.split(marcador_bucket, 1)[1]
 
     if foto.startswith("http"):
-        return foto
+        return None
 
-    return supabase.storage.from_("equipamentos-fotos").get_public_url(foto)
+    return foto
 
 # --- Configuração Supabase ---
 @st.cache_resource
@@ -587,10 +594,16 @@ elif menu == "Lista de Equipamentos":
                     for col, (_, item) in zip(cols, df_exibicao.iloc[i:i + 3].iterrows()):
                         with col:
                             with st.container(border=True):
-                                foto_url = obter_url_foto_supabase(item.get("fotos"))
-
-                                if foto_url:
-                                    st.image(foto_url, use_container_width=True)
+                                foto = obter_primeira_foto(item.get("fotos"))
+                                caminho_foto = obter_caminho_bucket(foto)
+                                
+                                if caminho_foto:
+                                    try:
+                                        bytes_foto = supabase.storage.from_(BUCKET_FOTOS).download(caminho_foto)
+                                        st.image(bytes_foto, use_container_width=True)
+                                    except Exception as e:
+                                        st.warning("Foto encontrada, mas não foi possível carregar do bucket.")
+                                        st.caption(str(foto))
                                 else:
                                     st.info("Sem foto cadastrada")
                             
