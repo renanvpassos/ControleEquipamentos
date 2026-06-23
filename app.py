@@ -9,33 +9,34 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 import ast
 import json
+import base64
 
 BUCKET_FOTOS = "equipamentos-fotos"
 
-def obter_primeira_foto(valor):
+def obter_lista_fotos(valor):
     if valor is None:
-        return None
+        return []
 
     if isinstance(valor, list):
-        return valor[0] if valor else None
+        return [str(f).strip() for f in valor if str(f).strip() not in ["", "None", "nan", "[]"]]
 
     texto = str(valor).strip()
 
     if texto in ["", "None", "nan", "[]"]:
-        return None
+        return []
 
     if texto.startswith("[") and texto.endswith("]"):
         try:
             lista = json.loads(texto)
-            return lista[0] if lista else None
+            return [str(f).strip() for f in lista if str(f).strip()]
         except Exception:
             try:
                 lista = ast.literal_eval(texto)
-                return lista[0] if lista else None
+                return [str(f).strip() for f in lista if str(f).strip()]
             except Exception:
-                return texto
+                return [texto]
 
-    return texto
+    return [texto]
 
 
 def obter_caminho_bucket(foto):
@@ -56,6 +57,42 @@ def obter_caminho_bucket(foto):
         return None
 
     return foto
+
+
+def imagem_bucket_para_html(caminho_foto):
+    bytes_foto = supabase.storage.from_(BUCKET_FOTOS).download(caminho_foto)
+    ext = caminho_foto.split(".")[-1].lower()
+
+    mime = "image/jpeg"
+    if ext == "png":
+        mime = "image/png"
+    elif ext == "webp":
+        mime = "image/webp"
+
+    img_base64 = base64.b64encode(bytes_foto).decode("utf-8")
+
+    return f"""
+        <div style="
+            width: 100%;
+            height: 220px;
+            overflow: hidden;
+            border-radius: 8px;
+            background: #f3f4f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        ">
+            <img
+                src="data:{mime};base64,{img_base64}"
+                style="
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                "
+            />
+        </div>
+    """
 
 # --- Configuração Supabase ---
 @st.cache_resource
