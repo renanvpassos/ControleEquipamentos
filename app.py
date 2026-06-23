@@ -872,11 +872,16 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
     with tab_listar:
         pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
         
-        # 1. Filtra trazendo apenas as baixas que não foram arquivadas historicamente
+        # 1. Filtra trazendo apenas as baixas que NÃO foram arquivadas historicamente
         res_baixas = supabase.table("baixas").select("*").eq("arquivado", False).order("data_baixa", desc=True).execute()
         
         if res_baixas.data:
             df_baixas = pd.DataFrame(res_baixas.data)
+            
+            # -----------------------------------------------------------------
+            # SOLUÇÃO PARA DUPLICADOS: Mantém apenas a baixa mais recente de cada Service Tag
+            # -----------------------------------------------------------------
+            df_baixas = df_baixas.drop_duplicates(subset=["service_tag"], keep="first")
             
             # Busca todos os equipamentos para cruzar os dados de status
             res_equips = supabase.table("equipamentos").select("*").execute()
@@ -909,9 +914,7 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                     
                     status_atual_equip = dados_equip.get('status', 'N/A')
                     
-                    # -----------------------------------------------------------------
                     # REGRA DE FILTRO: PULA A RENDERIZAÇÃO SE O EQUIPAMENTO NÃO FOR INATIVO
-                    # -----------------------------------------------------------------
                     if status_atual_equip != "Inativo":
                         continue
                     
@@ -947,7 +950,7 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                             st.markdown(f"**Motivo:** {str(linha['motivo']).capitalize()}")
                             st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
                             st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
-                            if linha.get('observacao'):
+                            if línea.get('observacao'):
                                 st.markdown(f"**Observação:** *{linha['observacao']}*")
                         
                         # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO ---
@@ -958,7 +961,7 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                 st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
                                 st.markdown(f"**Status:** {status_atual_equip}")
                                 
-                                # SÓ MOSTRA O BOTÃO SE FOR MASTER (O equipamento já é inativo devido ao filtro acima)
+                                # SÓ MOSTRA O BOTÃO SE FOR MASTER
                                 if st.session_state.user_role == "Master":
                                     st.markdown("---")
                                     if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
