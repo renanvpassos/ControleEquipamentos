@@ -872,8 +872,8 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
     with tab_listar:
         pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
         
-        # 1. Busca as baixas e os equipamentos
-        res_baixas = supabase.table("baixas").select("*").order("data_baixa", desc=True).execute()
+        # 1. Filtra trazendo APENAS baixas que NÃO foram arquivadas (ativas no painel)
+        res_baixas = supabase.table("baixas").select("*").eq("arquivado", False).order("data_baixa", desc=True).execute()
         
         if res_baixas.data:
             df_baixas = pd.DataFrame(res_baixas.data)
@@ -903,30 +903,22 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         if not equip_filtrado.empty:
                             dados_equip = equip_filtrado.iloc[0].to_dict()
                     
-                    # Define se a baixa está resolvida com base no status ATUAL do equipamento no banco
-                    # Se o equipamento já voltou a ser "Ativo", esta linha de baixa específica é considerada resolvida/passada
                     status_atual_equip = dados_equip.get('status', 'N/A')
                     baixa_resolvida = (status_atual_equip == "Ativo")
                     
-                    # Estilo CSS para transparência de 30% se estiver resolvido (equipamento ativo)
+                    # Estilo CSS para transparência se o equipamento já foi resolvido por outro meio
                     estilo_container = "opacity: 0.3; pointer-events: none;" if baixa_resolvida else "opacity: 1;"
                     
                     # --- CONTAINER PRINCIPAL DA BAIXA ---
                     with st.container(border=True):
-                        # Início do bloco HTML para forçar a transparência de 30% no container inteiro
                         st.markdown(f'<div style="{estilo_container}">', unsafe_allow_html=True)
-                        
-                        # Coluna 1: Foto (Esquerda) | Coluna 2: Dados Baixa (Centro) | Coluna 3: Dados Equipamento (Direita)
                         col_foto, col_dados_baixa, col_dados_equip = st.columns([1.5, 2, 1.5])
                         
-                        # --- COLUNA DA ESQUERDA: FOTOS UTILIZANDO O CARROSSEL NATIVO ---
+                        # --- COLUNA DA ESQUERDA: FOTOS ---
                         with col_foto:
                             codigo_card = f"baixa_{str(id_baixa)}"
-                            
-                            # Utiliza as funções auxiliares já declaradas no seu código
                             fotos_raw = obter_lista_fotos(linha.get("fotos"))
                             caminhos_fotos = []
-                            
                             for foto in fotos_raw:
                                 caminho_foto = obter_caminho_bucket(foto)
                                 if caminho_foto:
@@ -945,7 +937,7 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         with col_dados_baixa:
                             st.markdown(f"### Baixa: {st_atual}")
                             if baixa_resolvida:
-                                st.success("✅ **BAIXA CONCLUÍDA / EQUIPAMENTO ATIVO**")
+                                st.success("✅ **EQUIPAMENTO JÁ SE ENCONTRA ATIVO**")
                             st.markdown(f"**Motivo:** {str(linha['motivo']).capitalize()}")
                             st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
                             st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
@@ -960,19 +952,20 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                 st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
                                 st.markdown(f"**Status:** {status_atual_equip}")
                                 
-                                # -----------------------------------------------------------------
-                                # CONDIÇÃO SEGURA: SÓ MOSTRA O BOTÃO SE FOR MASTER E SE FOR INATIVO
-                                # -----------------------------------------------------------------
+                                # SÓ MOSTRA O BOTÃO SE FOR MASTER E SE FOR INATIVO
                                 if st.session_state.user_role == "Master" and status_atual_equip == "Inativo":
                                     st.markdown("---")
                                     if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
-                                        with st.spinner("Reativando equipamento..."):
+                                        with st.spinner("Reativando equipamento e limpando painel..."):
                                             try:
-                                                # 1. Atualiza apenas o equipamento correspondente para "Ativo"
+                                                # 1. Volta o equipamento para Ativo
                                                 supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
                                                 
-                                                # 2. Registra a ação no Log
-                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" reativou o equipamento ST: {st_atual}.')
+                                                # 2. Em vez de apagar fisicamente do banco, ocultamos (arquivamos) para fins de relatório
+                                                supabase.table("baixas").update({"arquivado": True}).eq("id", id_baixa).execute()
+                                                
+                                                # 3. Salva no log do sistema
+                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" finalizou e arquivou a baixa do equipamento ST: {st_atual}.')
                                                 
                                                 st.success(f"Equipamento {st_atual} reativado com sucesso!")
                                                 import time
@@ -980,14 +973,12 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                                 st.rerun()
                                             except Exception as e:
                                                 st.error(f"Erro ao reativar equipamento: {e}")
-                                # -----------------------------------------------------------------
                             else:
                                 st.caption("Equipamento não localizado no banco.")
                         
-                        # Fecha o bloco HTML de estilização do container
                         st.markdown('</div>', unsafe_allow_html=True)
         else:
-            st.info("Nenhum registro de baixa inserido até o momento.")
+            st.info("Nenhum registro de baixa ativo no momento.")
 
     with tab_nova:
         st.subheader("Registrar Nova Baixa")
@@ -1023,42 +1014,51 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                     elif fotos_baixa and len(fotos_baixa) > 10:
                         st.error("Permitido anexar no máximo 10 fotos.")
                     else:
-                        urls_fotos_baixa = []
-                        erro_upload_baixa = False
+                        # -----------------------------------------------------------------
+                        # VALIDAÇÃO CRÍTICA: IMPEDIR SERVICE_TAG DUPLICADA EM BAIXAS EM ABERTO
+                        # -----------------------------------------------------------------
+                        checar_duplicado = supabase.table("baixas").select("id").eq("service_tag", st_selecionada).eq("arquivado", False).execute()
                         
-                        if fotos_baixa:
-                            with st.spinner("Fazendo upload das fotos da baixa..."):
-                                for idx, foto in enumerate(fotos_baixa):
-                                    ext = foto.name.split(".")[-1]
-                                    caminho_storage = f"baixas/{st_selecionada}/{st_selecionada}_{idx}_{int(datetime.now().timestamp())}.{ext}"
-                                    try:
-                                        supabase.storage.from_(BUCKET_FOTOS).upload(caminho_storage, foto.read())
-                                        url = supabase.storage.from_(BUCKET_FOTOS).get_public_url(caminho_storage)
-                                        urls_fotos_baixa.append(url)
-                                    except Exception as e:
-                                        st.error(f"Falha ao enviar a foto {foto.name}: {e}")
-                                        erro_upload_baixa = True
-                                        break
-                        
-                        if not erro_upload_baixa:
-                            try:
-                                supabase.table("baixas").insert({
-                                    "service_tag": st_selecionada,
-                                    "motivo": motivo,
-                                    "observacao": observacao if observacao else None,
-                                    "fotos": urls_fotos_baixa,
-                                    "criado_por": st.session_state.user.email
-                                }).execute()
-                                
-                                supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
-                                registrar_log("Baixa", f'O usuário "{st.session_state.user.email}" deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
-                                
-                                st.success(f"Baixa efetuada e equipamento (ST: {st_selecionada}) definido como Inativo com sucesso!")
-                                import time
-                                time.sleep(2)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Erro ao processar a requisição no banco de dados: {e}")
+                        if checar_duplicado.data:
+                            st.error(f"⚠️ O equipamento {st_selecionada} já possui uma baixa em andamento! Resolva a baixa anterior antes de abrir uma nova.")
+                        else:
+                            urls_fotos_baixa = []
+                            erro_upload_baixa = False
+                            
+                            if fotos_baixa:
+                                with st.spinner("Fazendo upload das fotos da baixa..."):
+                                    for idx, foto in enumerate(fotos_baixa):
+                                        ext = foto.name.split(".")[-1]
+                                        caminho_storage = f"baixas/{st_selecionada}/{st_selecionada}_{idx}_{int(datetime.now().timestamp())}.{ext}"
+                                        try:
+                                            supabase.storage.from_(BUCKET_FOTOS).upload(caminho_storage, foto.read())
+                                            url = supabase.storage.from_(BUCKET_FOTOS).get_public_url(caminho_storage)
+                                            urls_fotos_baixa.append(url)
+                                        except Exception as e:
+                                            st.error(f"Falha ao enviar a foto {foto.name}: {e}")
+                                            erro_upload_baixa = True
+                                            break
+                            
+                            if not erro_upload_baixa:
+                                try:
+                                    supabase.table("baixas").insert({
+                                        "service_tag": st_selecionada,
+                                        "motivo": motivo,
+                                        "observacao": observacao if observacao else None,
+                                        "fotos": urls_fotos_baixa,
+                                        "criado_por": st.session_state.user.email,
+                                        "arquivado": False # Garante que entra visível
+                                    }).execute()
+                                    
+                                    supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
+                                    registrar_log("Baixa", f'O usuário "{st.session_state.user.email}" deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
+                                    
+                                    st.success(f"Baixa efetuada e equipamento (ST: {st_selecionada}) definido como Inativo com sucesso!")
+                                    import time
+                                    time.sleep(2)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Erro ao processar a requisição no banco de dados: {e}")
 
 # --- 5. RELATÓRIOS (Apenas Master) ---
 elif menu == "Relatórios" and st.session_state.user_role == "Master":
