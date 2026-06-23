@@ -14,14 +14,6 @@ import streamlit.components.v1 as components
 
 BUCKET_FOTOS = "equipamentos-fotos"
 
-@st.dialog("Foto do equipamento", width="large")
-def abrir_foto_ampliada(bytes_foto):
-    st.image(bytes_foto, use_container_width=True)
-
-
-def baixar_foto_bucket(caminho_foto):
-    return supabase.storage.from_(BUCKET_FOTOS).download(caminho_foto)
-
 def obter_lista_fotos(valor):
     if valor is None:
         return []
@@ -88,7 +80,7 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
     components.html(
         f"""
         <div class="carousel" id="carousel-{codigo_card}">
-            <img id="img-{codigo_card}" src="" onclick="openCurrent_{codigo_card}()" />
+            <img id="img-{codigo_card}" src="" onclick="openExpanded_{codigo_card}()" />
 
             <button class="arrow left" onclick="prev_{codigo_card}(event)">‹</button>
             <button class="arrow right" onclick="next_{codigo_card}(event)">›</button>
@@ -123,34 +115,75 @@ def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
                 render_{codigo_card}();
             }}
 
-            function openCurrent_{codigo_card}() {{
-                const win = window.open();
-                win.document.write(`
-                    <html>
-                        <head>
-                            <title>Foto do equipamento</title>
-                            <style>
-                                body {{
-                                    margin: 0;
-                                    background: #111;
-                                    width: 100vw;
-                                    height: 100vh;
-                                    display: flex;
-                                    align-items: center;
-                                    justify-content: center;
-                                }}
-                                img {{
-                                    max-width: 96vw;
-                                    max-height: 96vh;
-                                    object-fit: contain;
-                                }}
-                            </style>
-                        </head>
-                        <body>
-                            <img src="${{slides_{codigo_card}[index_{codigo_card}]}}" />
-                        </body>
-                    </html>
-                `);
+            function closeExpanded_{codigo_card}() {{
+                const existing = window.parent.document.getElementById("expanded-photo-{codigo_card}");
+                if (existing) {{
+                    existing.remove();
+                }}
+            }}
+
+            function openExpanded_{codigo_card}() {{
+                const parentDoc = window.parent.document;
+
+                const oldModal = parentDoc.getElementById("expanded-photo-{codigo_card}");
+                if (oldModal) {{
+                    oldModal.remove();
+                }}
+
+                const overlay = parentDoc.createElement("div");
+                overlay.id = "expanded-photo-{codigo_card}";
+                overlay.style.position = "fixed";
+                overlay.style.inset = "0";
+                overlay.style.zIndex = "999999";
+                overlay.style.background = "rgba(0, 0, 0, 0.86)";
+                overlay.style.display = "flex";
+                overlay.style.alignItems = "center";
+                overlay.style.justifyContent = "center";
+                overlay.style.padding = "24px";
+                overlay.style.boxSizing = "border-box";
+                overlay.style.cursor = "zoom-out";
+
+                const expandedImg = parentDoc.createElement("img");
+                expandedImg.src = slides_{codigo_card}[index_{codigo_card}];
+                expandedImg.style.maxWidth = "96vw";
+                expandedImg.style.maxHeight = "92vh";
+                expandedImg.style.objectFit = "contain";
+                expandedImg.style.borderRadius = "10px";
+                expandedImg.style.boxShadow = "0 20px 70px rgba(0, 0, 0, 0.55)";
+                expandedImg.style.cursor = "default";
+
+                const closeBtn = parentDoc.createElement("button");
+                closeBtn.innerHTML = "×";
+                closeBtn.style.position = "fixed";
+                closeBtn.style.top = "18px";
+                closeBtn.style.right = "24px";
+                closeBtn.style.width = "44px";
+                closeBtn.style.height = "44px";
+                closeBtn.style.border = "0";
+                closeBtn.style.borderRadius = "999px";
+                closeBtn.style.background = "rgba(255, 255, 255, 0.18)";
+                closeBtn.style.color = "#fff";
+                closeBtn.style.fontSize = "34px";
+                closeBtn.style.lineHeight = "34px";
+                closeBtn.style.cursor = "pointer";
+                closeBtn.style.paddingBottom = "4px";
+
+                overlay.onclick = function() {{
+                    overlay.remove();
+                }};
+
+                expandedImg.onclick = function(event) {{
+                    event.stopPropagation();
+                }};
+
+                closeBtn.onclick = function(event) {{
+                    event.stopPropagation();
+                    overlay.remove();
+                }};
+
+                overlay.appendChild(expandedImg);
+                overlay.appendChild(closeBtn);
+                parentDoc.body.appendChild(overlay);
             }}
 
             render_{codigo_card}();
@@ -757,60 +790,8 @@ elif menu == "Lista de Equipamentos":
                                 
                                 if caminhos_fotos:
                                     try:
-                                        chave_slide = f"slide_foto_{codigo_card}"
-                                
-                                        if chave_slide not in st.session_state:
-                                            st.session_state[chave_slide] = 0
-                                
-                                        total_fotos = len(caminhos_fotos)
-                                
-                                        if st.session_state[chave_slide] >= total_fotos:
-                                            st.session_state[chave_slide] = 0
-                                
-                                        indice_atual = st.session_state[chave_slide]
-                                        caminho_atual = caminhos_fotos[indice_atual]
-                                        bytes_foto = baixar_foto_bucket(caminho_atual)
-                                
-                                        st.markdown(
-                                            """
-                                            <style>
-                                                div[data-testid="stImage"] img {
-                                                    height: 220px;
-                                                    object-fit: cover;
-                                                    border-radius: 8px;
-                                                    cursor: zoom-in;
-                                                }
-                                            </style>
-                                            """,
-                                            unsafe_allow_html=True
-                                        )
-                                
-                                        if st.button("", key=f"abrir_foto_{codigo_card}", use_container_width=True):
-                                            abrir_foto_ampliada(bytes_foto)
-                                
-                                        st.image(bytes_foto, use_container_width=True)
-                                
-                                        if total_fotos > 1:
-                                            col_ant, col_count, col_prox = st.columns([1, 2, 1])
-                                
-                                            with col_ant:
-                                                if st.button("‹", key=f"ant_{codigo_card}", use_container_width=True):
-                                                    st.session_state[chave_slide] = (indice_atual - 1) % total_fotos
-                                                    st.rerun()
-                                
-                                            with col_count:
-                                                st.markdown(
-                                                    f"<p style='text-align:center; margin: 8px 0 0;'>{indice_atual + 1} / {total_fotos}</p>",
-                                                    unsafe_allow_html=True
-                                                )
-                                
-                                            with col_prox:
-                                                if st.button("›", key=f"prox_{codigo_card}", use_container_width=True):
-                                                    st.session_state[chave_slide] = (indice_atual + 1) % total_fotos
-                                                    st.rerun()
-                                
+                                        mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
                                         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                                
                                     except Exception:
                                         st.warning("Foto encontrada, mas não foi possível carregar.")
                                 else:
