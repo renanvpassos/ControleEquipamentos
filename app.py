@@ -872,11 +872,14 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
     with tab_listar:
         pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
         
-        res_baixas = supabase.table("baixas").select("*").order("data_baixa", desc=True).execute()
+        # Alterado o select para trazer os dados da tabela relacionada 'equipamentos'
+        # Nota: Certifique-se de que a tabela 'baixas' possua uma Foreign Key apontando para 'equipamentos'
+        res_baixas = supabase.table("baixas").select("*, equipamentos(*)").order("data_baixa", desc=True).execute()
         
         if res_baixas.data:
             df_baixas = pd.DataFrame(res_baixas.data)
             
+            # Ajuste na pesquisa para verificar também os campos dentro do dicionário de equipamentos
             if pesquisa_baixa:
                 p_lower = pesquisa_baixa.lower()
                 mascara = df_baixas.astype(str).apply(
@@ -887,11 +890,63 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
             if df_baixas.empty:
                 st.warning("Nenhuma baixa correspondente localizada.")
             else:
-                st.dataframe(df_baixas, use_container_width=True)
+                # Loop para renderizar cada baixa de forma detalhada e interativa
+                for _, linha in df_baixas.iterrows():
+                    # Captura os dados do equipamento associado
+                    dados_equip = linha.get("equipamentos") if isinstance(linha.get("equipamentos"), dict) else {}
+                    
+                    # Cria um container visual elegante para cada registro de baixa
+                    with st.container(border=True):
+                        col1, col2 = st.columns([2, 1])
+                        
+                        with col1:
+                            st.markdown(f"### Baixa: {linha['service_tag']}")
+                            st.markdown(f"**Motivo:** {linha['motivo'].capitalize()}")
+                            st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
+                            st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
+                            if linha.get('observacao'):
+                                st.markdown(f"**Observação:** {linha['observacao']}")
+                        
+                        with col2:
+                            st.markdown("**Dados do Equipamento:**")
+                            if dados_equip:
+                                st.markdown(f"* **Tipo:** {dados_equip.get('tipo', 'N/A')}")
+                                st.markdown(f"* **Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
+                                # Adicione aqui outros campos do equipamento que deseja exibir, ex:
+                                # st.markdown(f"* **Marca/Modelo:** {dados_equip.get('marca', 'N/A')}")
+                            else:
+                                st.markdown("*Dados do equipamento não localizados.*")
+
+                        # --- SEÇÃO DE FOTOS INTERATIVAS ---
+                        lista_fotos = linha.get("fotos")
+                        if lista_fotos and isinstance(lista_fotos, list) and len(lista_fotos) > 0:
+                            st.write("---")
+                            st.markdown("**📸 Fotos anexadas:**")
+                            
+                            # Cria links/botões na mesma linha para as fotos
+                            cols_fotos = st.columns(len(lista_fotos))
+                            for idx, url in enumerate(lista_fotos):
+                                with cols_fotos[idx]:
+                                    # Chave única para evitar conflitos no Streamlit
+                                    chave_foto = f"btn_foto_{linha['id']}_{idx}" 
+                                    
+                                    # Se o usuário clicar no botão correspondente à foto
+                                    if st.button(f"Ver Foto {idx + 1}", key=chave_foto):
+                                        st.session_state[f"ver_{chave_foto}"] = True
+                                    
+                                    # Condicional para exibir a foto logo abaixo caso tenha sido clicada
+                                    if st.session_state.get(f"ver_{chave_foto}", False):
+                                        st.image(url, caption=f"Foto {idx + 1} - ST: {linha['service_tag']}", use_container_width=True)
+                                        if st.button("Fechar Foto", key=f"Fechar_{chave_foto}"):
+                                            st.session_state[f"ver_{chave_foto}"] = False
+                                            st.rerun()
+                        else:
+                            st.caption("Nenhuma foto anexada a esta baixa.")
         else:
             st.info("Nenhum registro de baixa inserido até o momento.")
 
     with tab_nova:
+
         st.subheader("Registrar Nova Baixa")
         
         res_equips_ativos = supabase.table("equipamentos").select("service_tag", "tipo", "colaborador").eq("status", "Ativo").execute()
