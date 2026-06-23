@@ -908,65 +908,28 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                         # Coluna 1: Foto (Esquerda) | Coluna 2: Dados Baixa (Centro) | Coluna 3: Dados Equipamento (Direita)
                         col_foto, col_dados_baixa, col_dados_equip = st.columns([1.5, 2, 1.5])
                         
-                        # --- COLUNA DA ESQUERDA: FOTOS VIA BUCKET ---
+                        # --- COLUNA DA ESQUERDA: FOTOS UTILIZANDO O CARROSSEL NATIVO ---
                         with col_foto:
-                            lista_fotos_raw = linha.get("fotos")
-                            urls_geradas = []
+                            codigo_card = f"baixa_{str(id_baixa)}"
                             
-                            if lista_fotos_raw and isinstance(lista_fotos_raw, list):
-                                for item in lista_fotos_raw:
-                                    # Extrai o caminho limpo (path) independente de como foi salvo
-                                    caminho_limpo = None
-                                    item_str = str(item)
-                                    
-                                    # Se no banco estiver a URL inteira, extraímos apenas a parte que importa do path (depois de /public/)
-                                    if "object/public/" in item_str:
-                                        try:
-                                            # Remove tudo até o nome do bucket para obter o path interno do arquivo
-                                            caminho_limpo = item_str.split(f"object/public/{BUCKET_FOTOS}/")[-1].replace("'", "").replace('"', '').replace('}', '')
-                                        except:
-                                            caminho_limpo = None
-                                    else:
-                                        # Se já for o path puro (ex: 'baixas/ST123/...') limpa resíduos de dicionário se houver
-                                        caminho_limpo = item_str.replace("{'public_url': '", "").replace("'}", "").strip()
-                                    
-                                    # Gera a URL fresca e pública direto do seu BUCKET_FOTOS
-                                    if caminho_limpo:
-                                        try:
-                                            res_url = supabase.storage.from_(BUCKET_FOTOS).get_public_url(caminho_limpo)
-                                            # Trata caso o retorno seja o objeto completo do SDK ou string direta
-                                            url_final = res_url.get("public_url", res_url) if isinstance(res_url, dict) else res_url
-                                            urls_geradas.append(url_final)
-                                        except Exception as e:
-                                            pass
-
-                            if urls_geradas:
-                                # Controle do carrossel/índice de fotos
-                                chave_index_foto = f"idx_foto_{id_baixa}"
-                                if chave_index_foto not in st.session_state:
-                                    st.session_state[chave_index_foto] = 0
-                                
-                                idx_atual = st.session_state[chave_index_foto]
-                                if idx_atual >= len(urls_geradas):
-                                    idx_atual = 0
-                                    st.session_state[chave_index_foto] = 0
-                                
-                                # Renderiza a imagem perfeitamente na coluna esquerda
-                                st.image(urls_geradas[idx_atual], caption=f"Foto {idx_atual + 1} de {len(urls_geradas)}", use_container_width=True)
-                                
-                                # Botões de navegação se houver mais de uma foto
-                                if len(urls_geradas) > 1:
-                                    c_ant, c_prox = st.columns(2)
-                                    with c_ant:
-                                        if st.button("◀ Ant.", key=f"ant_{id_baixa}", use_container_width=True):
-                                            st.session_state[chave_index_foto] = (idx_atual - 1) % len(urls_geradas)
-                                            st.rerun()
-                                    with c_prox:
-                                        if st.button("Prox. ▶", key=f"prox_{id_baixa}", use_container_width=True):
-                                            st.session_state[chave_index_foto] = (idx_atual + 1) % len(urls_geradas)
-                                            st.rerun()
+                            # Utiliza as funções auxiliares já declaradas no seu código
+                            fotos_raw = obter_lista_fotos(linha.get("fotos"))
+                            caminhos_fotos = []
+                            
+                            for foto in fotos_raw:
+                                caminho_foto = obter_caminho_bucket(foto)
+                                if caminho_foto:
+                                    caminhos_fotos.append(caminho_foto)
+                            
+                            if caminhos_fotos:
+                                try:
+                                    # Invoca a mesma função de carrossel usada na lista geral
+                                    mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
+                                    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                                except Exception:
+                                    st.warning("Foto encontrada, mas não foi possível carregar.")
                             else:
-                                st.info("Sem foto cadastrada.")
+                                st.info("Sem foto cadastrada nesta baixa.")
                         
                         # --- COLUNA DO CENTRO: DADOS DA BAIXA ---
                         with col_dados_baixa:
@@ -990,7 +953,6 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
             st.info("Nenhum registro de baixa inserido até o momento.")
 
     with tab_nova:
-
         st.subheader("Registrar Nova Baixa")
         
         res_equips_ativos = supabase.table("equipamentos").select("service_tag", "tipo", "colaborador").eq("status", "Ativo").execute()
