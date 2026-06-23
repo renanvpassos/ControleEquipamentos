@@ -893,9 +893,17 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
         if not res_equips_ativos.data:
             st.warning("Não há equipamentos ativos cadastrados disponíveis para baixa.")
         else:
-            # Estrutura dicionário para prévia dinâmica em tempo real
+            # Estrutura dicionário blindando contra chaves nulas ou inválidas
             lista_ativos = res_equips_ativos.data
-            dict_equips = {item["service_tag"]: item for item in lista_ativos}
+            dict_equips = {}
+            
+            for item in lista_ativos:
+                st_val = item.get("service_tag")
+                # Garante que a service_tag exista e não seja apenas espaços em branco
+                if st_val and str(st_val).strip():
+                    dict_equips[str(st_val).strip().upper()] = item
+                    
+            # Agora a ordenação é 100% segura pois só contém strings válidas
             opcoes_st = ["Selecione..."] + sorted(list(dict_equips.keys()))
             
             st_selecionada = st.selectbox("Selecione a Service Tag (Obrigatório)*", options=opcoes_st)
