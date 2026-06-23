@@ -872,12 +872,13 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
     with tab_listar:
         pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
         
-        # 1. Filtra trazendo APENAS baixas que NÃO foram arquivadas (ativas no painel)
+        # 1. Filtra trazendo apenas as baixas que não foram arquivadas historicamente
         res_baixas = supabase.table("baixas").select("*").eq("arquivado", False).order("data_baixa", desc=True).execute()
         
         if res_baixas.data:
             df_baixas = pd.DataFrame(res_baixas.data)
             
+            # Busca todos os equipamentos para cruzar os dados de status
             res_equips = supabase.table("equipamentos").select("*").execute()
             df_equips = pd.DataFrame(res_equips.data) if res_equips.data else pd.DataFrame()
             
@@ -891,6 +892,9 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
             if df_baixas.empty:
                 st.warning("Nenhuma baixa correspondente localizada.")
             else:
+                # Contador para verificar se alguma baixa válida será exibida
+                baixas_exibidas = 0
+                
                 # Loop para renderizar cada baixa
                 for _, linha in df_baixas.iterrows():
                     st_atual = linha["service_tag"]
@@ -904,6 +908,15 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                             dados_equip = equip_filtrado.iloc[0].to_dict()
                     
                     status_atual_equip = dados_equip.get('status', 'N/A')
+                    
+                    # -----------------------------------------------------------------
+                    # REGRA DE FILTRO: PULA A RENDERIZAÇÃO SE O EQUIPAMENTO NÃO FOR INATIVO
+                    # -----------------------------------------------------------------
+                    if status_atual_equip != "Inativo":
+                        continue
+                    
+                    # Se chegou até aqui, incrementa o contador de baixas visíveis
+                    baixas_exibidas += 1
                     
                     # --- CONTAINER PRINCIPAL DA BAIXA ---
                     with st.container(border=True):
@@ -945,8 +958,8 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                 st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
                                 st.markdown(f"**Status:** {status_atual_equip}")
                                 
-                                # SÓ MOSTRA O BOTÃO SE FOR MASTER E SE O EQUIPAMENTO ESTIVER INATIVO
-                                if st.session_state.user_role == "Master" and status_atual_equip == "Inativo":
+                                # SÓ MOSTRA O BOTÃO SE FOR MASTER (O equipamento já é inativo devido ao filtro acima)
+                                if st.session_state.user_role == "Master":
                                     st.markdown("---")
                                     if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
                                         with st.spinner("Reativando equipamento e removendo da lista..."):
@@ -954,20 +967,24 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                                 # 1. Altera o equipamento correspondente de volta para "Ativo"
                                                 supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
                                                 
-                                                # 2. Arquiva esta baixa específica para sumir da aba Pesquisar Baixas
+                                                # 2. Arquiva esta baixa específica para histórico de relatórios
                                                 supabase.table("baixas").update({"arquivado": True}).eq("id", id_baixa).execute()
                                                 
                                                 # 3. Registra a reativação no Log do sistema
                                                 registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" finalizou e ocultou a baixa do equipamento ST: {st_atual}.')
                                                 
-                                                st.success(f"Equipamento {st_atual} reativado e baixa removida do painel!")
+                                                st.success(f"Equipamento {st_atual} reativado e removido do painel!")
                                                 import time
                                                 time.sleep(1)
-                                                st.rerun() # Atualiza a tela para sumir o card instantaneamente
+                                                st.rerun() # Recarrega a página instantaneamente
                                             except Exception as e:
                                                 st.error(f"Erro ao reativar equipamento: {e}")
                             else:
                                 st.caption("Equipamento não localizado no banco.")
+                
+                # Caso existam baixas no banco mas todas já estejam com equipamentos Ativos
+                if baixas_exibidas == 0:
+                    st.info("Nenhum equipamento inativo listado nas baixas atuais.")
         else:
             st.info("Nenhum registro de baixa ativo no momento.")
 
