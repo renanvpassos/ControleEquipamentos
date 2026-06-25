@@ -1268,7 +1268,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             if 'id' in df_eq_raw.columns:
                 df_eq_raw = df_eq_raw.drop_duplicates(subset=['id'], keep='last')
                 
-            # Normalizar nome da coluna 'tipo' se necessário
+            # Normalizar nome da coluna 'tipo'
             if 'tipo' in df_eq_raw.columns:
                 df_eq_raw['tipo'] = df_eq_raw['tipo'].astype(str).str.strip().str.title()
             
@@ -1290,7 +1290,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             
             colabs_alertas = []
             
-            # Validação segura da coluna 'tipo' (anteriormente tipo_equipamento)
             if 'colaborador' in df_ativos.columns and 'tipo' in df_ativos.columns:
                 df_perifericos = df_ativos.groupby(['colaborador', 'tipo']).size().unstack(fill_value=0)
                 
@@ -1311,10 +1310,11 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                         })
             df_alertas_perifericos = pd.DataFrame(colabs_alertas)
             
-            df_eq_raw['codigo'] = df_eq_raw['codigo'].astype(str).str.strip()
-            df_codigos_nao_zero = df_eq_raw[~df_eq_raw['codigo'].str.startswith('0', na=False)]
-            df_codigos_nao_zero_filtrado = df_codigos_nao_zero[['colaborador', 'tipo', 'codigo', 'Status']].rename(
-                columns={'colaborador': 'Colaborador', 'tipo': 'Tipo Equipamento', 'codigo': 'Código'}
+            # Ajuste definitivo apontando para 'codigo_controle'
+            df_eq_raw['codigo_controle'] = df_eq_raw['codigo_controle'].astype(str).str.strip()
+            df_codigos_nao_zero = df_eq_raw[~df_eq_raw['codigo_controle'].str.startswith('0', na=False)]
+            df_codigos_nao_zero_filtrado = df_codigos_nao_zero[['colaborador', 'tipo', 'codigo_controle', 'Status']].rename(
+                columns={'colaborador': 'Colaborador', 'tipo': 'Tipo Equipamento', 'codigo_controle': 'Código'}
             )
             
             df_inativos_lista = df_com_colab[df_com_colab["Status"] == "Inativo"][['colaborador', 'tipo', 'service_tag']].rename(
