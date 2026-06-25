@@ -1254,7 +1254,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
 
     # --- OPÇÃO 8: RELATÓRIO DE ESTATÍSTICAS GERAIS ---
     elif op_relatorio.startswith("8"):
-        st.subheader("📈 Dashboard: Relatório de Estatísticas Gerais")
+        st.subheader("📈 Relatório de Estatísticas Gerais")
         is_estatisticas_gerais = True
         titulo_doc = "Relatório de Estatísticas Gerais"
         
@@ -1343,7 +1343,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 
             st.markdown("---")
             
-            st.markdown("#### 🚨 Alerta de Kit de Periféricos Incompleto ou Excedente")
+            st.markdown("#### 🚨 Kit de Periféricos Incompleto ou Excedente")
             if not df_alertas_perifericos.empty:
                 st.dataframe(df_alertas_perifericos, use_container_width=True, hide_index=True)
             else:
@@ -1353,7 +1353,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             
             col_tab1, col_tab2 = st.columns(2)
             with col_tab1:
-                st.markdown(f"#### 🏷️ Equipamentos com Código não iniciando em '0' (Total: {len(df_codigos_nao_zero_filtrado)})")
+                st.markdown(f"#### 🏷️ Equipamentos sem etiqueta de patrimônio Mult (Total: {len(df_codigos_nao_zero_filtrado)})")
                 if not df_codigos_nao_zero_filtrado.empty:
                     st.dataframe(df_codigos_nao_zero_filtrado, use_container_width=True, hide_index=True)
                     st.caption("Tipos afetados:")
