@@ -1343,7 +1343,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 
             st.markdown("---")
             
-            st.markdown("#### 🚨 Kit de Periféricos Incompleto ou Excedente")
+            st.markdown(f"#### 🚨 Kit de Periféricos Incompleto ou Excedente (Total: {len(df_alertas_perifericos)})")
             if not df_alertas_perifericos.empty:
                 st.dataframe(df_alertas_perifericos, use_container_width=True, hide_index=True)
             else:
