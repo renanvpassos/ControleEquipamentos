@@ -1353,7 +1353,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             
             col_tab1, col_tab2 = st.columns(2)
             with col_tab1:
-                st.markdown(f"#### 🏷️ Equipamentos SEM etiqueta de patrimônio (Total: {len(df_codigos_nao_zero_filtrado)})")
+                st.markdown(f"#### 🏷️ Equipamentos sem etiqueta de patrimônio Mult (Total: {len(df_codigos_nao_zero_filtrado)})")
                 if not df_codigos_nao_zero_filtrado.empty:
                     st.dataframe(df_codigos_nao_zero_filtrado, use_container_width=True, hide_index=True)
                     st.caption("Tipos afetados:")
@@ -1377,18 +1377,10 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             
     # --- BLOCO DE DOWNLOAD E VISUALIZAÇÃO DOS RESULTADOS ---
     if not df_filtrado.empty:
+        # Se for o relatório de estatísticas gerais, removemos o botão de PDF
         if is_estatisticas_gerais:
             st.markdown("---")
-            st.subheader("Exportação do Dashboard")
-            c_down1, _ = st.columns([2, 6])
-            with c_down1:
-                pdf_data = gerar_pdf(df_filtrado, titulo_doc) 
-                st.download_button(
-                    label="📥 Baixar Dashboard em PDF",
-                    data=pdf_data,
-                    file_name="relatorio_estatisticas_gerais.pdf",
-                    mime="application/pdf"
-                )
+            # O bloco antigo com "Exportação do Dashboard" e o botão de PDF foi totalmente removido daqui.
         else:
             st.markdown("---")
             st.subheader("Prévia dos Resultados Filtrados")
