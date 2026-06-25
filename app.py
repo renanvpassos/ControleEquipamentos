@@ -1268,8 +1268,13 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             if 'id' in df_eq_raw.columns:
                 df_eq_raw = df_eq_raw.drop_duplicates(subset=['id'], keep='last')
                 
-            # Normalizar nome da coluna 'tipo'
+            # 🟢 NOVO FILTRO: Ignora equipamentos que contêm 'ESTAÇÃO' (case-insensitive)
+            # Nota: Assumi que a verificação é na coluna 'tipo'. Se for em outra coluna, substitua 'tipo' abaixo.
             if 'tipo' in df_eq_raw.columns:
+                filtro_estacao = df_eq_raw['tipo'].astype(str).str.contains('ESTAÇÃO|ESTACAO', case=False, na=False)
+                df_eq_raw = df_eq_raw[~filtro_estacao]
+                
+                # Normalizar nome da coluna 'tipo' após o filtro
                 df_eq_raw['tipo'] = df_eq_raw['tipo'].astype(str).str.strip().str.title()
             
             # --- PROCESSAMENTO DOS DADOS ---
