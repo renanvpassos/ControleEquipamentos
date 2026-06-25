@@ -1268,8 +1268,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             if 'id' in df_eq_raw.columns:
                 df_eq_raw = df_eq_raw.drop_duplicates(subset=['id'], keep='last')
                 
-            # 🟢 NOVO FILTRO: Ignora equipamentos que contêm 'ESTAÇÃO' (case-insensitive)
-            # Nota: Assumi que a verificação é na coluna 'tipo'. Se for em outra coluna, substitua 'tipo' abaixo.
+            # Filtro: Ignora equipamentos que contêm 'ESTAÇÃO' (case-insensitive)
             if 'tipo' in df_eq_raw.columns:
                 filtro_estacao = df_eq_raw['tipo'].astype(str).str.contains('ESTAÇÃO|ESTACAO', case=False, na=False)
                 df_eq_raw = df_eq_raw[~filtro_estacao]
@@ -1334,17 +1333,12 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             
             st.markdown("---")
             
-            g1, g2 = st.columns(2)
-            with g1:
-                st.markdown("**📊 Distribuição de Status dos Equipamentos**")
-                status_counts = df_eq_raw["Status"].value_counts()
-                st.bar_chart(status_counts, color="#1f77b4")
-                
-            with g2:
-                st.markdown("**📊 Volumetria por Tipo de Equipamento (Geral)**")
-                if 'tipo' in df_eq_raw.columns:
-                    tipo_counts = df_eq_raw["tipo"].value_counts()
-                    st.bar_chart(tipo_counts, color="#ff7f0e")
+            # 🔄 MODIFICADO: Removido o gráfico de Status e transformado a Volumetria em Tabela
+            st.markdown("**📊 Volumetria por Tipo de Equipamento (Geral)**")
+            if 'tipo' in df_eq_raw.columns:
+                tipo_counts = df_eq_raw["tipo"].value_counts().reset_index()
+                tipo_counts.columns = ["Tipo de Equipamento", "Quantidade"]
+                st.dataframe(tipo_counts, use_container_width=True, hide_index=True)
                 
             st.markdown("---")
             
@@ -1361,8 +1355,12 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.markdown(f"#### 🏷️ Equipamentos sem etiqueta de patrimônio Mult (Total: {len(df_codigos_nao_zero_filtrado)})")
                 if not df_codigos_nao_zero_filtrado.empty:
                     st.dataframe(df_codigos_nao_zero_filtrado, use_container_width=True, hide_index=True)
-                    st.caption("Tipos afetados:")
-                    st.bar_chart(df_codigos_nao_zero_filtrado["Tipo Equipamento"].value_counts())
+                    
+                    # 🔄 MODIFICADO: Gráfico de "Tipos afetados" alterado para estilo Tabela
+                    st.markdown("**Tipos afetados:**")
+                    tipos_afetados = df_codigos_nao_zero_filtrado["Tipo Equipamento"].value_counts().reset_index()
+                    tipos_afetados.columns = ["Tipo Equipamento", "Quantidade"]
+                    st.dataframe(tipos_afetados, use_container_width=True, hide_index=True)
                 else:
                     st.success("Todos os códigos de equipamentos começam com 0.")
                     
@@ -1370,8 +1368,12 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.markdown(f"#### ⚠️ Equipamentos Atualmente em Baixa / Inativos (Total: {len(df_inativos_lista)})")
                 if not df_inativos_lista.empty:
                     st.dataframe(df_inativos_lista, use_container_width=True, hide_index=True)
-                    st.caption("Tipos de equipamentos inativos:")
-                    st.bar_chart(df_inativos_lista["Tipo Equipamento"].value_counts())
+                    
+                    # 🔄 MODIFICADO: Gráfico de "Tipos de equipamentos inativos" alterado para estilo Tabela
+                    st.markdown("**Tipos de equipamentos inativos:**")
+                    tipos_inativos = df_inativos_lista["Tipo Equipamento"].value_counts().reset_index()
+                    tipos_inativos.columns = ["Tipo Equipamento", "Quantidade"]
+                    st.dataframe(tipos_inativos, use_container_width=True, hide_index=True)
                 else:
                     st.success("Não há equipamentos em baixa no momento.")
             
