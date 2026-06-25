@@ -1252,13 +1252,12 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
         else:
             st.info("Não há dados de baixas suficientes no banco para gerar estatísticas.")
 
-    # --- NOVA OPÇÃO: 8. RELATÓRIO DE ESTATÍSTICAS GERAIS ---
+    # --- OPÇÃO 8: RELATÓRIO DE ESTATÍSTICAS GERAIS ---
     elif op_relatorio.startswith("8"):
         st.subheader("📈 Dashboard: Relatório de Estatísticas Gerais")
         is_estatisticas_gerais = True
         titulo_doc = "Relatório de Estatísticas Gerais"
         
-        # 1. Busca de Dados das tabelas necessárias
         res_eq = supabase.table("equipamentos").select("*").execute()
         res_bx = supabase.table("baixas").select("*").execute()
         
@@ -1266,17 +1265,16 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             df_eq_raw = pd.DataFrame(res_eq.data)
             df_bx_raw = pd.DataFrame(res_bx.data) if res_bx.data else pd.DataFrame()
             
-            # Garantir limpeza básica por ID único se houver duplicatas de auditoria
             if 'id' in df_eq_raw.columns:
                 df_eq_raw = df_eq_raw.drop_duplicates(subset=['id'], keep='last')
                 
-            # --- PROCESSAMENTO DOS DADOS ---
+            # Normalizar nome da coluna 'tipo' se necessário
+            if 'tipo' in df_eq_raw.columns:
+                df_eq_raw['tipo'] = df_eq_raw['tipo'].astype(str).str.strip().str.title()
             
-            # A. Quantidade de equipamentos cadastrados e ativos
-            # Assumindo que os ativos NÃO estão com baixa em aberto (arquivado == False significa inativo)
+            # --- PROCESSAMENTO DOS DADOS ---
             st_inativas = []
             if not df_bx_raw.empty:
-                # Service tags que estão em baixa e não foram arquivadas/reativadas
                 st_inativas = df_bx_raw[df_bx_raw["arquivado"] == False]["service_tag"].unique().tolist()
             
             df_eq_raw["Status"] = df_eq_raw["service_tag"].apply(lambda x: "Inativo" if x in st_inativas else "Ativo")
@@ -1284,54 +1282,46 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             total_cadastrados = len(df_eq_raw)
             total_ativos = len(df_eq_raw[df_eq_raw["Status"] == "Ativo"])
             
-            # B. Colaboradores únicos que possuem equipamentos (sem duplicar)
             df_com_colab = df_eq_raw.dropna(subset=['colaborador'])
             df_com_colab = df_com_colab[df_com_colab['colaborador'].str.strip() != ""]
             colaboradores_unicos = df_com_colab['colaborador'].nunique()
             
-            # C. Sinalização de periféricos obrigatórios e monitores (>1)
-            # Vamos pivotar os dados para analisar o kit por colaborador (Apenas equipamentos Ativos)
             df_ativos = df_com_colab[df_com_colab["Status"] == "Ativo"]
             
-            # Agrupa para contar tipos de equipamentos por colaborador
-            df_perifericos = df_ativos.groupby(['colaborador', 'tipo_equipamento']).size().unstack(fill_value=0)
-            
-            # Garantir que as colunas existam no DataFrame para evitar KeyError
-            for col_nome in ['Mouse', 'Teclado', 'Monitor']:
-                if col_nome not in df_perifericos.columns:
-                    df_perifericos[col_nome] = 0
-            
-            # Regra de Alerta
             colabs_alertas = []
-            for colab, row in df_perifericos.iterrows():
-                motivos_alerta = []
-                if row['Mouse'] == 0: motivos_alerta.append("Sem Mouse")
-                if row['Teclado'] == 0: motivos_alerta.append("Sem Teclado")
-                if row['Monitor'] > 1: motivos_alerta.append(f"Mais de 1 Monitor ({row['Monitor']})")
+            
+            # Validação segura da coluna 'tipo' (anteriormente tipo_equipamento)
+            if 'colaborador' in df_ativos.columns and 'tipo' in df_ativos.columns:
+                df_perifericos = df_ativos.groupby(['colaborador', 'tipo']).size().unstack(fill_value=0)
                 
-                if motivos_alerta:
-                    colabs_alertas.append({
-                        "Colaborador (Nome Completo)": colab,
-                        "Inconsistência": ", ".join(motivos_alerta)
-                    })
+                for col_nome in ['Mouse', 'Teclado', 'Monitor']:
+                    if col_nome not in df_perifericos.columns:
+                        df_perifericos[col_nome] = 0
+                
+                for colab, row in df_perifericos.iterrows():
+                    motivos_alerta = []
+                    if row['Mouse'] == 0: motivos_alerta.append("Sem Mouse")
+                    if row['Teclado'] == 0: motivos_alerta.append("Sem Teclado")
+                    if row['Monitor'] > 1: motivos_alerta.append(f"Mais de 1 Monitor ({row['Monitor']})")
+                    
+                    if motivos_alerta:
+                        colabs_alertas.append({
+                            "Colaborador (Nome Completo)": colab,
+                            "Inconsistência": ", ".join(motivos_alerta)
+                        })
             df_alertas_perifericos = pd.DataFrame(colabs_alertas)
             
-            # D. Código do Equipamento que NÃO começa com o número 0
-            # Garantindo conversão para string
             df_eq_raw['codigo'] = df_eq_raw['codigo'].astype(str).str.strip()
             df_codigos_nao_zero = df_eq_raw[~df_eq_raw['codigo'].str.startswith('0', na=False)]
-            df_codigos_nao_zero_filtrado = df_codigos_nao_zero[['colaborador', 'tipo_equipamento', 'codigo', 'Status']].rename(
-                columns={'colaborador': 'Colaborador', 'tipo_equipamento': 'Tipo Equipamento', 'codigo': 'Código'}
+            df_codigos_nao_zero_filtrado = df_codigos_nao_zero[['colaborador', 'tipo', 'codigo', 'Status']].rename(
+                columns={'colaborador': 'Colaborador', 'tipo': 'Tipo Equipamento', 'codigo': 'Código'}
             )
             
-            # E. Colaboradores com equipamento em baixa (Inativo)
-            df_inativos_lista = df_com_colab[df_com_colab["Status"] == "Inativo"][['colaborador', 'tipo_equipamento', 'service_tag']].rename(
-                columns={'colaborador': 'Colaborador', 'tipo_equipamento': 'Tipo Equipamento', 'service_tag': 'Service Tag'}
+            df_inativos_lista = df_com_colab[df_com_colab["Status"] == "Inativo"][['colaborador', 'tipo', 'service_tag']].rename(
+                columns={'colaborador': 'Colaborador', 'tipo': 'Tipo Equipamento', 'service_tag': 'Service Tag'}
             )
             
-            # --- RENDERIZAÇÃO DO DASHBOARD EM TELA (GRÁFICOS) ---
-            
-            # Linha 1 de Indicadores (Cards)
+            # --- RENDERIZAÇÃO NA TELA ---
             kpi1, kpi2, kpi3 = st.columns(3)
             kpi1.metric("Colaboradores com Equipamentos", colaboradores_unicos)
             kpi2.metric("Equipamentos Cadastrados", total_cadastrados)
@@ -1339,7 +1329,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             
             st.markdown("---")
             
-            # Seção de Gráficos 1
             g1, g2 = st.columns(2)
             with g1:
                 st.markdown("**📊 Distribuição de Status dos Equipamentos**")
@@ -1348,12 +1337,12 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 
             with g2:
                 st.markdown("**📊 Volumetria por Tipo de Equipamento (Geral)**")
-                tipo_counts = df_eq_raw["tipo_equipamento"].value_counts()
-                st.bar_chart(tipo_counts, color="#ff7f0e")
+                if 'tipo' in df_eq_raw.columns:
+                    tipo_counts = df_eq_raw["tipo"].value_counts()
+                    st.bar_chart(tipo_counts, color="#ff7f0e")
                 
             st.markdown("---")
             
-            # Exibição das Tabelas Solicitadas com Gráficos Auxiliares
             st.markdown("#### 🚨 Alerta de Kit de Periféricos Incompleto ou Excedente")
             if not df_alertas_perifericos.empty:
                 st.dataframe(df_alertas_perifericos, use_container_width=True, hide_index=True)
@@ -1367,7 +1356,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.markdown(f"#### 🏷️ Equipamentos com Código não iniciando em '0' (Total: {len(df_codigos_nao_zero_filtrado)})")
                 if not df_codigos_nao_zero_filtrado.empty:
                     st.dataframe(df_codigos_nao_zero_filtrado, use_container_width=True, hide_index=True)
-                    # Minigráfico do tipo desses códigos incorretos
                     st.caption("Tipos afetados:")
                     st.bar_chart(df_codigos_nao_zero_filtrado["Tipo Equipamento"].value_counts())
                 else:
@@ -1377,14 +1365,11 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.markdown(f"#### ⚠️ Equipamentos Atualmente em Baixa / Inativos (Total: {len(df_inativos_lista)})")
                 if not df_inativos_lista.empty:
                     st.dataframe(df_inativos_lista, use_container_width=True, hide_index=True)
-                    # Minigráfico do tipo de baixas atuais
                     st.caption("Tipos de equipamentos inativos:")
                     st.bar_chart(df_inativos_lista["Tipo Equipamento"].value_counts())
                 else:
                     st.success("Não há equipamentos em baixa no momento.")
             
-            # IMPORTANTE: Definimos o df_filtrado com as informações processadas compiladas.
-            # Como a exportação é permitida APENAS em PDF, passamos os dados estruturados em dicionário ou dataframes consolidados para a função do PDF.
             df_filtrado = df_eq_raw 
             
         else:
@@ -1393,17 +1378,11 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
     # --- BLOCO DE DOWNLOAD E VISUALIZAÇÃO DOS RESULTADOS ---
     if not df_filtrado.empty:
         if is_estatisticas_gerais:
-            # Layout exclusivo para o Relatório de Estatísticas Gerais (Sem opção de Excel, apenas PDF)
             st.markdown("---")
             st.subheader("Exportação do Dashboard")
             c_down1, _ = st.columns([2, 6])
             with c_down1:
-                # Aqui você chama sua função adaptada para desenhar o PDF de estatísticas gerais.
-                # Exemplo: pdf_data = gerar_pdf_estatisticas_gerais(df_eq_raw, df_alertas_perifericos, df_codigos_nao_zero_filtrado, df_inativos_lista)
-                
-                # Usando temporariamente a chamada padrão do seu sistema, repassando os dados do relatório 8
                 pdf_data = gerar_pdf(df_filtrado, titulo_doc) 
-                
                 st.download_button(
                     label="📥 Baixar Dashboard em PDF",
                     data=pdf_data,
@@ -1411,7 +1390,6 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                     mime="application/pdf"
                 )
         else:
-            # Lógica padrão mantida para as opções 1 a 7
             st.markdown("---")
             st.subheader("Prévia dos Resultados Filtrados")
             st.dataframe(df_filtrado, use_container_width=True)
