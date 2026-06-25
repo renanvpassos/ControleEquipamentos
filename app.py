@@ -1353,7 +1353,7 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
             
             col_tab1, col_tab2 = st.columns(2)
             with col_tab1:
-                st.markdown(f"#### 🏷️ Equipamentos sem etiqueta de patrimônio Mult (Total: {len(df_codigos_nao_zero_filtrado)})")
+                st.markdown(f"#### 🏷️ Equipamentos SEM etiqueta de patrimônio (Total: {len(df_codigos_nao_zero_filtrado)})")
                 if not df_codigos_nao_zero_filtrado.empty:
                     st.dataframe(df_codigos_nao_zero_filtrado, use_container_width=True, hide_index=True)
                     st.caption("Tipos afetados:")
