@@ -490,9 +490,27 @@ if menu == "Cadastrar Equipamento":
         """
         <style>
         .stMainBlockContainer {
-            max-width: 1100px;
+            max-width: 1400px;
             margin-left: auto;
             margin-right: auto;
+            padding-left: 0.75rem;
+            padding-right: 0.75rem;
+        }
+        .stMainBlockContainer .stHorizontalBlock {
+            gap: 0.35rem;
+        }
+        .stMainBlockContainer [data-testid="stFileUploaderDropzone"] {
+            min-height: 0;
+            padding: 0.25rem 0.35rem;
+            gap: 0.2rem;
+        }
+        .stMainBlockContainer [data-testid="stFileUploaderDropzoneInstructions"] {
+            display: none;
+        }
+        .stMainBlockContainer [data-testid="stFileUploaderDropzone"] button {
+            min-height: 1.8rem;
+            padding: 0.2rem 0.4rem;
+            font-size: 0.75rem;
         }
         </style>
         """,
@@ -532,9 +550,9 @@ if menu == "Cadastrar Equipamento":
             == "Estação de Trabalho"
         )
         if workstation:
-            col_tipo, col_foto, col_lixeira = st.columns([8, 1.2, 0.6])
+            col_tipo, col_foto, col_lixeira = st.columns([7.5, 1.2, 0.45])
         else:
-            col_tipo, col_marca, col_modelo, col_tag, col_foto, col_lixeira = st.columns([2, 2, 2, 2, 1.2, 0.6])
+            col_tipo, col_marca, col_modelo, col_tag, col_foto, col_lixeira = st.columns([2.2, 1.8, 1.8, 1.8, 1.2, 0.45])
         with col_tipo:
             tipo = st.selectbox(
                 "Tipo de equipamento*",
