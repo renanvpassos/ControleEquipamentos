@@ -469,7 +469,7 @@ if menu == "Cadastrar Equipamento":
         key=f"{cadastro_prefixo}_colaborador",
     )
     descricao = st.text_area(
-        "Descrição (Opcional - Máx. 240 caracteres)",
+        "Tem algum detalhe no equipamento? Descreva abaixo (max 240 caracteres).",
         max_chars=240,
         key=f"{cadastro_prefixo}_descricao",
     )
