@@ -649,19 +649,20 @@ if menu == "Cadastrar Equipamento":
                     st.warning("O cadastro precisa ter pelo menos um equipamento.")
         with col_foto:
             st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
-            foto = st.file_uploader(
-                "Foto do equipamento*",
+            fotos = st.file_uploader(
+                "Fotos do equipamento*",
                 type=["png", "jpg", "jpeg"],
+                accept_multiple_files=True,
                 key=f"{cadastro_prefixo}_foto_{chave}",
                 label_visibility="collapsed",
-                help="Anexe uma foto nítida do equipamento inteiro, de preferência com a etiqueta visível.",
+                help="Anexe uma ou mais fotos nítidas do equipamento, de preferência com a etiqueta visível.",
             )
         dados_itens.append({
             "tipo": tipo,
             "marca": marca,
             "modelo": modelo.strip(),
             "service_tag": service_tag.strip().upper() or None,
-            "foto": foto,
+            "fotos": fotos,
         })
 
     col_adicionar, _ = st.columns([1, 8])
@@ -683,12 +684,12 @@ if menu == "Cadastrar Equipamento":
             )
             for item in dados_itens
         )
-        fotos_invalidas = any(not item["foto"] for item in dados_itens)
+        fotos_invalidas = any(not item["fotos"] for item in dados_itens)
 
         if itens_invalidos or not colaborador.strip():
             st.error("Preencha o tipo e a marca dos equipamentos aplicáveis e o colaborador.")
         elif fotos_invalidas:
-            st.error("Anexe uma foto para cada equipamento cadastrado.")
+            st.error("Anexe pelo menos uma foto para cada equipamento cadastrado.")
         elif tags_repetidas:
             st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
         else:
@@ -739,23 +740,27 @@ if menu == "Cadastrar Equipamento":
                 }
                 st.error(f"Já existe equipamento cadastrado com a Etiqueta Patrimônio Mult: {', '.join(sorted(tags_existentes))}.")
             elif codigo is not None:
-                urls_fotos = []
+                fotos_por_item = []
                 erro_upload = False
                 with st.spinner("Enviando fotos dos equipamentos para o servidor..."):
                     for idx, item in enumerate(dados_itens):
-                        foto = item["foto"]
-                        extensao = foto.name.split(".")[-1].lower()
-                        codigo_equipamento = codigos[idx]
-                        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                        caminho_storage = f"{codigo_equipamento}/{codigo_equipamento}_{timestamp}.{extensao}"
-                        try:
-                            supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                            urls_fotos.append(
-                                supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                            )
-                        except Exception as e:
-                            st.error(f"Falha ao enviar a foto {foto.name}: {e}")
-                            erro_upload = True
+                        urls_fotos_item = []
+                        for foto in item["fotos"]:
+                            extensao = foto.name.split(".")[-1].lower()
+                            codigo_equipamento = codigos[idx]
+                            timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                            caminho_storage = f"{codigo_equipamento}/{codigo_equipamento}_{timestamp}.{extensao}"
+                            try:
+                                supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                                urls_fotos_item.append(
+                                    supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                                )
+                            except Exception as e:
+                                st.error(f"Falha ao enviar a foto {foto.name}: {e}")
+                                erro_upload = True
+                                break
+                        fotos_por_item.append(urls_fotos_item)
+                        if erro_upload:
                             break
 
                 if not erro_upload:
@@ -768,7 +773,7 @@ if menu == "Cadastrar Equipamento":
                             "modelo": item["modelo"] or None,
                             "colaborador": colaborador.strip(),
                             "descricao": descricao.strip() or None,
-                            "fotos": [urls_fotos[indice]],
+                            "fotos": fotos_por_item[indice],
                             "status": "Ativo",
                             "criado_por": (
                                 "Administrador"
@@ -1006,12 +1011,13 @@ elif menu == "Editar Cadastro":
                 )
             with col_foto:
                 st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
-                foto_nova = st.file_uploader(
-                    "Foto do equipamento*",
+                fotos_novas = st.file_uploader(
+                    "Adicionar fotos do equipamento",
                     type=["png", "jpg", "jpeg"],
+                    accept_multiple_files=True,
                     key=f"{itens_key}_foto_{chave}",
                     label_visibility="collapsed",
-                    help="Envie uma nova foto para este equipamento.",
+                    help="Envie uma ou mais fotos novas para este equipamento.",
                 )
             with col_lixeira:
                 st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
@@ -1033,7 +1039,7 @@ elif menu == "Editar Cadastro":
                 "service_tag": service_tag.strip().upper() or None,
                 "status": status,
                 "fotos": obter_lista_fotos(item.get("fotos")),
-                "foto_nova": foto_nova,
+                "fotos_novas": fotos_novas,
                 "tipo_original": item.get("tipo") or "",
             })
 
@@ -1093,7 +1099,7 @@ elif menu == "Editar Cadastro":
                 for item in dados_itens_edicao
             )
             fotos_invalidas = any(
-                not item["foto_nova"]
+                not item["fotos_novas"]
                 and (
                     not item["fotos"]
                     or item["tipo"] != item["tipo_original"]
@@ -1133,7 +1139,7 @@ elif menu == "Editar Cadastro":
             elif itens_invalidos:
                 st.error("Selecione o tipo e a marca dos equipamentos aplicáveis.")
             elif fotos_invalidas:
-                st.error("Anexe uma foto para cada equipamento sem imagem ou cujo tipo foi alterado.")
+                st.error("Anexe pelo menos uma foto para cada equipamento sem imagem ou cujo tipo foi alterado.")
             elif tags_repetidas:
                 st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
             elif tags_existentes:
@@ -1145,21 +1151,22 @@ elif menu == "Editar Cadastro":
                 erro_upload = False
                 with st.spinner("Enviando fotos dos equipamentos para o servidor..."):
                     for idx, item in enumerate(dados_itens_edicao):
-                        foto = item["foto_nova"]
-                        if foto is None:
-                            fotos_por_item[item["chave_ui"]] = item["fotos"]
-                            continue
-                        extensao = foto.name.split(".")[-1].lower()
-                        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                        caminho_storage = f"{codigo_novo}/{codigo_novo}_equip_{idx}_{timestamp}.{extensao}"
-                        try:
-                            supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                            fotos_por_item[item["chave_ui"]] = [
-                                supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                            ]
-                        except Exception as e:
-                            st.error(f"Erro ao enviar a foto do equipamento {item['tipo']}: {e}")
-                            erro_upload = True
+                        fotos_salvas = list(item["fotos"])
+                        for foto in item["fotos_novas"]:
+                            extensao = foto.name.split(".")[-1].lower()
+                            timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                            caminho_storage = f"{codigo_novo}/{codigo_novo}_equip_{idx}_{timestamp}.{extensao}"
+                            try:
+                                supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                                fotos_salvas.append(
+                                    supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                                )
+                            except Exception as e:
+                                st.error(f"Erro ao enviar a foto {foto.name} do equipamento {item['tipo']}: {e}")
+                                erro_upload = True
+                                break
+                        fotos_por_item[item["chave_ui"]] = fotos_salvas
+                        if erro_upload:
                             break
 
                 if not erro_upload:
