@@ -288,11 +288,10 @@ def registrar_log(acao, resumo, colaborador):
             "acao": acao,
             "resumo": resumo
         }).execute()
-    except APIError:
+    except APIError as e:
         st.warning(
             "A operação foi concluída, mas não foi possível registrar a atividade. "
-            "Verifique as colunas da tabela `logs_sistema` (`usuario_email`, `acao` e "
-            "`resumo`) e as políticas de INSERT (RLS) no Supabase."
+            f"Resposta do Supabase: {e}"
         )
 
 # --- Funções de Geração de Arquivos (PDF e Excel) ---
