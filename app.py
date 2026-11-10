@@ -666,10 +666,26 @@ elif menu == "Editar Cadastro":
 # --- 3. LISTA DE EQUIPAMENTOS ---
 elif menu == "Lista de Equipamentos":
     st.header("Lista Geral de Equipamentos")
-    res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
+    itens_por_consulta = 1000
+    dados_equipamentos = []
+    inicio_consulta = 0
 
-    if res_equip.data:
-        df_completo = pd.DataFrame(res_equip.data)
+    while True:
+        res_equip = (
+            supabase.table("equipamentos")
+            .select("*")
+            .order("data_registro", desc=False)
+            .range(inicio_consulta, inicio_consulta + itens_por_consulta - 1)
+            .execute()
+        )
+        dados_pagina_consulta = res_equip.data or []
+        dados_equipamentos.extend(dados_pagina_consulta)
+        if len(dados_pagina_consulta) < itens_por_consulta:
+            break
+        inicio_consulta += itens_por_consulta
+
+    if dados_equipamentos:
+        df_completo = pd.DataFrame(dados_equipamentos)
 
         col_filtro1, col_filtro2 = st.columns([2, 1])
 
@@ -719,8 +735,8 @@ elif menu == "Lista de Equipamentos":
 
         df_exibicao = df_exibicao[colunas_ordenadas]
 
-        if not filtro_ativo:
-            st.info("Use a barra de pesquisa ou o filtro de colaborador para visualizar os equipamentos.")
+        if not filtro_ativo and df_exibicao.empty:
+            st.info("Nenhum equipamento cadastrado ate o momento.")
         else:
             total_registros = len(df_exibicao)
             itens_por_pagina = 15
