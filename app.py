@@ -520,6 +520,10 @@ if menu == "Cadastrar Equipamento":
         "<h2 style='text-align: center;'>Cadastro de Equipamentos</h2>",
         unsafe_allow_html=True,
     )
+    mensagem_sucesso = st.session_state.pop("cadastro_sucesso_pendente", None)
+    if mensagem_sucesso:
+        st.success(mensagem_sucesso)
+
     if not st.session_state.admin_authenticated:
         st.caption("Cadastre um equipamento sem precisar criar uma conta ou fazer login.")
 
@@ -758,7 +762,10 @@ if menu == "Cadastrar Equipamento":
                             log_msg = f'O administrador cadastrou os equipamentos "{tipos_cadastrados}", Códigos: {faixa_codigos}, Colaborador: "{colaborador.strip()}"'
                             registrar_log("Inserir", log_msg, colaborador.strip())
 
-                        st.success(f"Cadastro salvo com {len(registros)} equipamento(s). Código(s): {faixa_codigos}.")
+                        st.session_state["cadastro_sucesso_pendente"] = (
+                            f"{len(registros)} equipamento(s) cadastrado(s) com sucesso. "
+                            f"Código(s): {faixa_codigos}."
+                        )
                         st.session_state.cadastro_versao += 1
                         st.rerun()
 
