@@ -17,8 +17,19 @@ from postgrest.exceptions import APIError
 
 BUCKET_FOTOS = "equipamentos-fotos"
 TIPOS_EQUIPAMENTO = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
+TIPOS_EQUIPAMENTO_OBRIGATORIOS = ["Monitor", "Computador", "Estação de Trabalho"]
 MARCAS_EQUIPAMENTO = ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"]
 MARCA_NAO_APLICAVEL = "Não se aplica"
+
+
+def obter_tipos_obrigatorios_faltantes(itens):
+    tipos_cadastrados = {item.get("tipo") for item in itens}
+    return [
+        tipo
+        for tipo in TIPOS_EQUIPAMENTO_OBRIGATORIOS
+        if tipo not in tipos_cadastrados
+    ]
+
 
 def obter_lista_fotos(valor):
     if valor is None:
@@ -627,7 +638,7 @@ if menu == "Cadastrar Equipamento":
                 service_tag = st.text_input(
                     "Etiqueta Patrimônio Mult (se tiver)",
                     key=f"{cadastro_prefixo}_tag_{chave}",
-                    placeholder="Ex.: 001234",
+                    placeholder="Ex.: ABC1234",
                 )
         with col_lixeira:
             st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
@@ -676,10 +687,16 @@ if menu == "Cadastrar Equipamento":
             )
             for item in dados_itens
         )
+        tipos_obrigatorios_faltantes = obter_tipos_obrigatorios_faltantes(dados_itens)
         fotos_invalidas = any(not item["fotos"] for item in dados_itens)
 
         if itens_invalidos or not colaborador.strip():
             st.error("Preencha o tipo e a marca dos equipamentos aplicáveis e o colaborador.")
+        elif tipos_obrigatorios_faltantes:
+            st.error(
+                "O cadastro precisa incluir pelo menos um de cada equipamento obrigatório: "
+                f"{', '.join(tipos_obrigatorios_faltantes)}."
+            )
         elif fotos_invalidas:
             st.error("Anexe pelo menos uma foto para cada equipamento cadastrado.")
         elif tags_repetidas:
@@ -1089,6 +1106,9 @@ elif menu == "Editar Cadastro":
                 )
                 for item in dados_itens_edicao
             )
+            tipos_obrigatorios_faltantes = obter_tipos_obrigatorios_faltantes(
+                dados_itens_edicao
+            )
             fotos_invalidas = any(
                 not item["fotos_novas"]
                 and (
@@ -1129,6 +1149,11 @@ elif menu == "Editar Cadastro":
                 st.error("O cadastro precisa ter pelo menos um equipamento.")
             elif itens_invalidos:
                 st.error("Selecione o tipo e a marca dos equipamentos aplicáveis.")
+            elif tipos_obrigatorios_faltantes:
+                st.error(
+                    "O cadastro precisa incluir pelo menos um de cada equipamento obrigatório: "
+                    f"{', '.join(tipos_obrigatorios_faltantes)}."
+                )
             elif fotos_invalidas:
                 st.error("Anexe pelo menos uma foto para cada equipamento sem imagem ou cujo tipo foi alterado.")
             elif tags_repetidas:
