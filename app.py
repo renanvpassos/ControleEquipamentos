@@ -531,7 +531,7 @@ if menu == "Cadastrar Equipamento":
 
     col_adicionar, _ = st.columns([1, 8])
     with col_adicionar:
-        if st.button("➕ Adicionar equipamento", key=f"{cadastro_prefixo}_adicionar"):
+        if st.button("➕ Adicionar outro", key=f"{cadastro_prefixo}_adicionar"):
             proxima_chave = str(max(int(item["chave"]) for item in itens_cadastro) + 1)
             st.session_state[itens_key] = itens_cadastro + [{"chave": proxima_chave}]
             st.rerun()
