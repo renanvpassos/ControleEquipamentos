@@ -11,6 +11,7 @@ import ast
 import json
 import base64
 import hmac
+import unicodedata
 import streamlit.components.v1 as components
 from postgrest.exceptions import APIError
 
@@ -42,6 +43,17 @@ def obter_lista_fotos(valor):
                 return [texto]
 
     return [texto]
+
+
+def normalizar_nome_colaborador(nome):
+    if nome is None or pd.isna(nome):
+        return ""
+    texto = unicodedata.normalize("NFKD", str(nome).casefold())
+    palavras = "".join(
+        caractere for caractere in texto
+        if not unicodedata.combining(caractere)
+    ).split()
+    return " ".join(palavras[:2]) if len(palavras) >= 2 else " ".join(palavras)
 
 
 def obter_caminho_bucket(foto):
@@ -324,6 +336,28 @@ def gerar_proximos_codigos_controle(quantidade):
     return [str(proximo_codigo + indice) for indice in range(quantidade)]
 
 
+def obter_colaboradores_cadastrados():
+    colaboradores = []
+    inicio = 0
+    tamanho_pagina = 1000
+    while True:
+        resposta = (
+            supabase.table("equipamentos")
+            .select("colaborador")
+            .order("id")
+            .range(inicio, inicio + tamanho_pagina - 1)
+            .execute()
+        )
+        pagina = resposta.data or []
+        colaboradores.extend(
+            item.get("colaborador") for item in pagina if item.get("colaborador")
+        )
+        if len(pagina) < tamanho_pagina:
+            break
+        inicio += tamanho_pagina
+    return colaboradores
+
+
 # --- Funções de Geração de Arquivos (PDF e Excel) ---
 def gerar_excel(df):
     output = io.BytesIO()
@@ -564,20 +598,43 @@ if menu == "Cadastrar Equipamento":
             st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
         else:
             try:
-                codigos = gerar_proximos_codigos_controle(len(dados_itens))
-                codigo = codigos[0]
-                check_tags = (
-                    supabase.table("equipamentos")
-                    .select("service_tag")
-                    .in_("service_tag", tags)
-                    .execute()
-                    if tags
-                    else None
-                )
+                colaboradores_existentes = obter_colaboradores_cadastrados()
+                colaboradores_duplicados = sorted({
+                    str(nome).strip()
+                    for nome in colaboradores_existentes
+                    if normalizar_nome_colaborador(nome)
+                    == normalizar_nome_colaborador(colaborador)
+                })
             except Exception as e:
-                st.error(f"Erro ao preparar o cadastro no banco de dados: {e}")
+                st.error(f"Erro ao verificar colaboradores já cadastrados: {e}")
                 codigo = None
                 check_tags = None
+            else:
+                if colaboradores_duplicados:
+                    st.error(
+                        "Já existe um cadastro para este colaborador: "
+                        f"{', '.join(colaboradores_duplicados)}. "
+                        "A comparação ignora acentos e maiúsculas e considera os "
+                        "dois primeiros nomes. Verifique antes de continuar."
+                    )
+                    codigo = None
+                    check_tags = None
+                else:
+                    try:
+                        codigos = gerar_proximos_codigos_controle(len(dados_itens))
+                        codigo = codigos[0]
+                        check_tags = (
+                            supabase.table("equipamentos")
+                            .select("service_tag")
+                            .in_("service_tag", tags)
+                            .execute()
+                            if tags
+                            else None
+                        )
+                    except Exception as e:
+                        st.error(f"Erro ao preparar o cadastro no banco de dados: {e}")
+                        codigo = None
+                        check_tags = None
 
             if codigo is not None and check_tags and check_tags.data:
                 tags_existentes = {
@@ -1067,34 +1124,6 @@ elif menu == "Lista de Equipamentos":
     if dados_equipamentos:
         df_completo = pd.DataFrame(dados_equipamentos)
 
-        col_filtro1, col_filtro2 = st.columns([2, 1])
-
-        with col_filtro1:
-            pesquisa = st.text_input("Pesquisar na lista (Qualquer referencia):")
-
-        with col_filtro2:
-            if "colaborador" in df_completo.columns:
-                lista_colaboradores = df_completo["colaborador"].dropna().unique().tolist()
-                lista_colaboradores = sorted([str(c) for c in lista_colaboradores if str(c).strip() != ""])
-            else:
-                lista_colaboradores = []
-
-            opcoes_colaboradores = ["Todos"] + lista_colaboradores
-            colaborador_selecionado = st.selectbox("Filtrar por Colaborador:", options=opcoes_colaboradores)
-
-        filtro_ativo = bool(pesquisa) or colaborador_selecionado != "Todos"
-        df_exibicao = df_completo.copy()
-
-        if colaborador_selecionado != "Todos":
-            df_exibicao = df_exibicao[df_exibicao["colaborador"] == colaborador_selecionado]
-
-        if pesquisa:
-            p_lower = pesquisa.lower()
-            mascara = df_exibicao.astype(str).apply(
-                lambda x: x.str.lower().str.contains(p_lower, na=False)
-            ).any(axis=1)
-            df_exibicao = df_exibicao[mascara]
-
         colunas_ordenadas = [
             "codigo_controle",
             "service_tag",
@@ -1108,22 +1137,61 @@ elif menu == "Lista de Equipamentos":
             "status",
             "fotos",
         ]
+        for coluna in colunas_ordenadas:
+            if coluna not in df_completo.columns:
+                df_completo[coluna] = None
+        df_completo = df_completo[colunas_ordenadas]
 
-        for c in colunas_ordenadas:
-            if c not in df_exibicao.columns:
-                df_exibicao[c] = None
+        grupos_colaboradores = {}
+        nomes_colaboradores = {}
+        for indice_linha, item in df_completo.iterrows():
+            valor_nome = item.get("colaborador")
+            nome = "" if pd.isna(valor_nome) else str(valor_nome).strip()
+            chave = normalizar_nome_colaborador(nome) or f"sem_colaborador_{indice_linha}"
+            grupos_colaboradores.setdefault(chave, []).append(item)
+            nomes_colaboradores.setdefault(chave, nome or "Sem colaborador")
 
-        df_exibicao = df_exibicao[colunas_ordenadas]
-        grupos_exibicao = {}
-        for indice_linha, item in df_exibicao.iterrows():
-            codigo_item = item.get("codigo_controle")
-            chave_grupo = (
-                str(codigo_item)
-                if pd.notna(codigo_item) and str(codigo_item).strip()
-                else f"sem_codigo_{item.get('id', indice_linha)}"
+        col_filtro1, col_filtro2 = st.columns([2, 1])
+
+        with col_filtro1:
+            pesquisa = st.text_input("Pesquisar na lista (Qualquer referencia):")
+
+        with col_filtro2:
+            opcoes_colaboradores = sorted(
+                grupos_colaboradores,
+                key=lambda chave: nomes_colaboradores[chave].casefold(),
             )
-            grupos_exibicao.setdefault(chave_grupo, []).append(item)
-        lista_grupos = list(grupos_exibicao.values())
+            colaborador_selecionado = st.selectbox(
+                "Filtrar por Colaborador:",
+                options=[None] + opcoes_colaboradores,
+                format_func=lambda chave: (
+                    "Todos" if chave is None else nomes_colaboradores[chave]
+                ),
+            )
+
+        filtro_ativo = bool(pesquisa) or colaborador_selecionado is not None
+        grupos_exibicao = {}
+        pesquisa_normalizada = pesquisa.lower()
+        for chave, grupo in grupos_colaboradores.items():
+            if colaborador_selecionado is not None and chave != colaborador_selecionado:
+                continue
+            if pesquisa_normalizada and not grupo.astype(str).apply(
+                lambda coluna: coluna.str.lower().str.contains(
+                    pesquisa_normalizada, na=False
+                )
+            ).any(axis=1).any():
+                continue
+            grupos_exibicao[chave] = grupo
+
+        lista_grupos = [
+            [registro for _, registro in grupo.iterrows()]
+            for grupo in grupos_exibicao.values()
+        ]
+        df_exibicao = (
+            pd.concat(list(grupos_exibicao.values()), ignore_index=True)
+            if grupos_exibicao
+            else df_completo.iloc[0:0].copy()
+        )
 
         if not filtro_ativo and df_exibicao.empty:
             st.info("Nenhum equipamento cadastrado ate o momento.")
@@ -1147,7 +1215,7 @@ elif menu == "Lista de Equipamentos":
 
             st.write(
                 f"Exibindo {inicio + 1 if total_registros else 0} a "
-                f"{min(fim, total_registros)} de {total_registros} cadastros:"
+                f"{min(fim, total_registros)} de {total_registros} colaboradores:"
             )
 
             if df_exibicao.empty:
@@ -1192,7 +1260,6 @@ elif menu == "Lista de Equipamentos":
                         zip(cols, df_pagina[i:i + 4])
                     ):
                         with col:
-                            item = itens_grupo[0]
                             status_grupo = [str(registro.get("status") or "-") for registro in itens_grupo]
                             is_inativo = all(status.lower() == "inativo" for status in status_grupo)
                             
@@ -1223,10 +1290,26 @@ elif menu == "Lista de Equipamentos":
                                 else:
                                     st.info("Sem foto cadastrada")
 
-                                st.markdown(f"**Codigo:** {item.get('codigo_controle') or '-'}")
-                                for registro in itens_grupo:
+                                nome_colaborador = next(
+                                    (
+                                        str(registro.get("colaborador")).strip()
+                                        for registro in itens_grupo
+                                        if not pd.isna(registro.get("colaborador"))
+                                        and str(registro.get("colaborador")).strip()
+                                    ),
+                                    "Sem colaborador",
+                                )
+                                codigos = list(dict.fromkeys(
+                                    str(registro.get("codigo_controle")).strip()
+                                    for registro in itens_grupo
+                                    if not pd.isna(registro.get("codigo_controle"))
+                                    and str(registro.get("codigo_controle")).strip()
+                                ))
+                                st.markdown(f"**Colaborador:** {nome_colaborador}")
+                                st.markdown(f"**Código(s) do cadastro:** {', '.join(codigos) or '-'}")
+                                for indice_equipamento, registro in enumerate(itens_grupo, start=1):
+                                    st.markdown(f"**Equipamento {indice_equipamento}**")
                                     st.markdown(
-                                        f"**Colaborador:** {registro.get('colaborador') or '-'}  \n"
                                         f"**Tipo:** {registro.get('tipo') or '-'}  \n"
                                         f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
                                         f"**Etiqueta Patrimônio Mult:** {registro.get('service_tag') or '-'}  \n"
