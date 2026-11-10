@@ -296,6 +296,33 @@ def registrar_log(acao, resumo, colaborador):
             f"Resposta do Supabase: {e}"
         )
 
+
+def gerar_proximo_codigo_controle():
+    codigos_cadastrados = []
+    inicio = 0
+    tamanho_pagina = 1000
+    while True:
+        resposta = (
+            supabase.table("equipamentos")
+            .select("codigo_controle")
+            .order("id")
+            .range(inicio, inicio + tamanho_pagina - 1)
+            .execute()
+        )
+        pagina = resposta.data or []
+        codigos_cadastrados.extend(pagina)
+        if len(pagina) < tamanho_pagina:
+            break
+        inicio += tamanho_pagina
+
+    codigos = [
+        int(str(item.get("codigo_controle")).strip())
+        for item in codigos_cadastrados
+        if str(item.get("codigo_controle", "")).strip().isdecimal()
+    ]
+    return str(max(codigos, default=-1) + 1)
+
+
 # --- Funções de Geração de Arquivos (PDF e Excel) ---
 def gerar_excel(df):
     output = io.BytesIO()
@@ -436,7 +463,6 @@ if menu == "Cadastrar Equipamento":
     if itens_key not in st.session_state:
         st.session_state[itens_key] = [{"chave": "0"}]
 
-    codigo_input = st.text_input("Código do Cadastro (Obrigatório)*", key=f"{cadastro_prefixo}_codigo")
     colaborador = st.text_input(
         "Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*",
         key=f"{cadastro_prefixo}_colaborador",
@@ -452,23 +478,38 @@ if menu == "Cadastrar Equipamento":
     dados_itens = []
     for indice, item in enumerate(itens_cadastro):
         chave = item["chave"]
-        col_tipo, col_marca, col_modelo, col_tag, col_lixeira = st.columns([2, 2, 2, 2, 0.6])
+        workstation = (
+            st.session_state.get(f"{cadastro_prefixo}_tipo_{chave}")
+            == "Estação de Trabalho"
+        )
+        if workstation:
+            col_tipo, col_lixeira = st.columns([8, 0.6])
+        else:
+            col_tipo, col_marca, col_modelo, col_tag, col_lixeira = st.columns([2, 2, 2, 2, 0.6])
         with col_tipo:
             tipo = st.selectbox(
                 "Tipo de equipamento*",
                 [""] + TIPOS_EQUIPAMENTO,
                 key=f"{cadastro_prefixo}_tipo_{chave}",
             )
-        with col_marca:
-            marca = st.selectbox(
-                "Marca*",
-                [""] + MARCAS_EQUIPAMENTO,
-                key=f"{cadastro_prefixo}_marca_{chave}",
-            )
-        with col_modelo:
-            modelo = st.text_input("Modelo", key=f"{cadastro_prefixo}_modelo_{chave}")
-        with col_tag:
-            service_tag = st.text_input("Service Tag (opcional)", key=f"{cadastro_prefixo}_tag_{chave}")
+        if tipo == "Estação de Trabalho":
+            st.session_state.pop(f"{cadastro_prefixo}_marca_{chave}", None)
+            st.session_state.pop(f"{cadastro_prefixo}_modelo_{chave}", None)
+            st.session_state.pop(f"{cadastro_prefixo}_tag_{chave}", None)
+            marca = None
+            modelo = ""
+            service_tag = ""
+        else:
+            with col_marca:
+                marca = st.selectbox(
+                    "Marca*",
+                    [""] + MARCAS_EQUIPAMENTO,
+                    key=f"{cadastro_prefixo}_marca_{chave}",
+                )
+            with col_modelo:
+                modelo = st.text_input("Modelo", key=f"{cadastro_prefixo}_modelo_{chave}")
+            with col_tag:
+                service_tag = st.text_input("Service Tag (opcional)", key=f"{cadastro_prefixo}_tag_{chave}")
         with col_lixeira:
             st.write("")
             if st.button("🗑️", key=f"{cadastro_prefixo}_remover_{chave}", help="Remover este equipamento"):
@@ -502,38 +543,47 @@ if menu == "Cadastrar Equipamento":
     )
 
     if st.button("Salvar Cadastro", key=f"{cadastro_prefixo}_salvar"):
-        codigo = codigo_input.strip().upper()
+        codigo = None
         tags = [item["service_tag"] for item in dados_itens if item["service_tag"]]
         tags_repetidas = len(tags) != len(set(tags))
-        itens_invalidos = any(not item["tipo"] or not item["marca"] for item in dados_itens)
+        itens_invalidos = any(
+            not item["tipo"]
+            or (
+                item["tipo"] != "Estação de Trabalho"
+                and not item["marca"]
+            )
+            for item in dados_itens
+        )
 
-        if itens_invalidos or not colaborador.strip() or not codigo or not fotos:
-            st.error("Preencha os campos obrigatórios (*) de cada equipamento, o colaborador, o código e anexe pelo menos uma foto.")
+        if itens_invalidos or not colaborador.strip() or not fotos:
+            st.error("Preencha o tipo e a marca dos equipamentos aplicáveis, o colaborador e anexe pelo menos uma foto.")
         elif len(fotos) > 10:
             st.error("Permitido anexar no máximo 10 fotos.")
         elif tags_repetidas:
             st.error("Não é permitido repetir a Service Tag no mesmo cadastro.")
         else:
-            check_codigo = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
-            check_tags = (
-                supabase.table("equipamentos")
-                .select("service_tag")
-                .in_("service_tag", tags)
-                .execute()
-                if tags
-                else None
-            )
+            try:
+                codigo = gerar_proximo_codigo_controle()
+                check_tags = (
+                    supabase.table("equipamentos")
+                    .select("service_tag")
+                    .in_("service_tag", tags)
+                    .execute()
+                    if tags
+                    else None
+                )
+            except Exception as e:
+                st.error(f"Erro ao preparar o cadastro no banco de dados: {e}")
+                check_tags = None
 
-            if check_codigo.data:
-                st.error(f"Já existe um cadastro com o código {codigo}.")
-            elif check_tags and check_tags.data:
+            if codigo is not None and check_tags and check_tags.data:
                 tags_existentes = {
                     item.get("service_tag")
                     for item in check_tags.data
                     if item.get("service_tag")
                 }
                 st.error(f"Já existe equipamento cadastrado com a Service Tag: {', '.join(sorted(tags_existentes))}.")
-            else:
+            elif codigo is not None:
                 urls_fotos = []
                 erro_upload = False
                 with st.spinner("Enviando fotos para o servidor..."):
@@ -708,39 +758,52 @@ elif menu == "Editar Cadastro":
         itens_edicao = st.session_state[itens_key]
         for indice, item in enumerate(itens_edicao):
             chave = item["chave_ui"]
-            col_tipo, col_marca, col_modelo, col_tag, col_status, col_lixeira = st.columns([1.7, 1.7, 1.7, 1.7, 1.3, 0.6])
             tipos_opcoes = [""] + TIPOS_EQUIPAMENTO
             if item.get("tipo") and item["tipo"] not in tipos_opcoes:
                 tipos_opcoes.append(item["tipo"])
             marcas_opcoes = [""] + MARCAS_EQUIPAMENTO
             if item.get("marca") and item["marca"] not in marcas_opcoes:
                 marcas_opcoes.append(item["marca"])
+            tipo_key = f"{itens_key}_tipo_{chave}"
+            tipo_atual = st.session_state.get(tipo_key, item.get("tipo") or "")
+            if tipo_atual == "Estação de Trabalho":
+                col_tipo, col_status, col_lixeira = st.columns([5, 1.3, 0.6])
+            else:
+                col_tipo, col_marca, col_modelo, col_tag, col_status, col_lixeira = st.columns([1.7, 1.7, 1.7, 1.7, 1.3, 0.6])
             with col_tipo:
                 tipo = st.selectbox(
                     "Tipo*",
                     tipos_opcoes,
                     index=tipos_opcoes.index(item.get("tipo") or ""),
-                    key=f"{itens_key}_tipo_{chave}",
+                    key=tipo_key,
                 )
-            with col_marca:
-                marca = st.selectbox(
-                    "Marca*",
-                    marcas_opcoes,
-                    index=marcas_opcoes.index(item.get("marca") or ""),
-                    key=f"{itens_key}_marca_{chave}",
-                )
-            with col_modelo:
-                modelo = st.text_input(
-                    "Modelo",
-                    value=item.get("modelo") or "",
-                    key=f"{itens_key}_modelo_{chave}",
-                )
-            with col_tag:
-                service_tag = st.text_input(
-                    "Service Tag",
-                    value=item.get("service_tag") or "",
-                    key=f"{itens_key}_tag_{chave}",
-                )
+            if tipo == "Estação de Trabalho":
+                st.session_state.pop(f"{itens_key}_marca_{chave}", None)
+                st.session_state.pop(f"{itens_key}_modelo_{chave}", None)
+                st.session_state.pop(f"{itens_key}_tag_{chave}", None)
+                marca = None
+                modelo = ""
+                service_tag = ""
+            else:
+                with col_marca:
+                    marca = st.selectbox(
+                        "Marca*",
+                        marcas_opcoes,
+                        index=marcas_opcoes.index(item.get("marca") or ""),
+                        key=f"{itens_key}_marca_{chave}",
+                    )
+                with col_modelo:
+                    modelo = st.text_input(
+                        "Modelo",
+                        value=item.get("modelo") or "",
+                        key=f"{itens_key}_modelo_{chave}",
+                    )
+                with col_tag:
+                    service_tag = st.text_input(
+                        "Service Tag",
+                        value=item.get("service_tag") or "",
+                        key=f"{itens_key}_tag_{chave}",
+                    )
             with col_status:
                 status_opcoes = ["Ativo", "Baixado", "Inativo"]
                 status_atual = item.get("status") or "Ativo"
@@ -826,7 +889,14 @@ elif menu == "Editar Cadastro":
             codigo_novo = ed_codigo.strip().upper()
             tags = [item["service_tag"] for item in dados_itens_edicao if item["service_tag"]]
             tags_repetidas = len(tags) != len(set(tags))
-            itens_invalidos = any(not item["tipo"] or not item["marca"] for item in dados_itens_edicao)
+            itens_invalidos = any(
+                not item["tipo"]
+                or (
+                    item["tipo"] != "Estação de Trabalho"
+                    and not item["marca"]
+                )
+                for item in dados_itens_edicao
+            )
             codigo_duplicado = False
             if codigo_novo and codigo_novo != str(equipamento_base.get("codigo_controle") or "").upper():
                 res_codigo = (
@@ -858,7 +928,7 @@ elif menu == "Editar Cadastro":
             elif not dados_itens_edicao:
                 st.error("O cadastro precisa ter pelo menos um equipamento.")
             elif itens_invalidos:
-                st.error("Selecione o tipo e a marca de cada equipamento.")
+                st.error("Selecione o tipo e a marca dos equipamentos aplicáveis.")
             elif tags_repetidas:
                 st.error("Não é permitido repetir a Service Tag no mesmo cadastro.")
             elif tags_existentes:
