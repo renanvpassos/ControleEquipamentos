@@ -281,10 +281,10 @@ if st.session_state.admin_access_requested and not st.session_state.admin_authen
     st.stop()
 
 # --- Funções Auxiliares de Log ---
-def registrar_log(acao, resumo):
+def registrar_log(acao, resumo, colaborador):
     try:
         supabase.table("logs").insert({
-            "usuario_email": "Administrador",
+            "usuario_email": colaborador,
             "acao": acao,
             "resumo": resumo
         }).execute()
@@ -497,7 +497,7 @@ if menu == "Cadastrar Equipamento":
                         
                         if st.session_state.admin_authenticated:
                             log_msg = f'O administrador cadastrou o equipamento: "{tipo}", "Código": {codigo}, "Service Tag": {service_tag}, "Colaborador": "{colaborador.strip()}"'
-                            registrar_log("Inserir", log_msg)
+                            registrar_log("Inserir", log_msg, colaborador.strip())
                         
                         st.success(f"Equipamento {codigo} (ST: {service_tag}) cadastrado com sucesso!")
                         import time
@@ -644,7 +644,11 @@ elif menu == "Editar Cadastro":
                                 "fotos": urls_finais
                             }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
                             
-                            registrar_log("Atualizar", f'O administrador alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).')
+                            registrar_log(
+                                "Atualizar",
+                                f'O administrador alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).',
+                                ed_colab.strip(),
+                            )
                             st.success("Cadastro atualizado com sucesso!")
                             st.rerun()
                         except Exception as e:
@@ -652,7 +656,11 @@ elif menu == "Editar Cadastro":
                             
             if btn_deletar:
                 supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
-                registrar_log("Deletar", f'O administrador deletou o equipamento {equip_selecionado["codigo_controle"]}.')
+                registrar_log(
+                    "Deletar",
+                    f'O administrador deletou o equipamento {equip_selecionado["codigo_controle"]}.',
+                    equip_selecionado.get("colaborador", "Não informado"),
+                )
                 st.success("Equipamento removido do banco de dados!")
                 st.rerun()
 
@@ -949,7 +957,11 @@ elif menu == "Baixas":
                                         try:
                                             supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
                                             supabase.table("baixas").update({"arquivado": True}).eq("id", id_baixa).execute()
-                                            registrar_log("Reativação", f'O administrador finalizou e ocultou a baixa do equipamento ST: {st_atual}.')
+                                            registrar_log(
+                                                "Reativação",
+                                                f'O administrador finalizou e ocultou a baixa do equipamento ST: {st_atual}.',
+                                                dados_equip.get("colaborador", "Não informado"),
+                                            )
                                             st.success(f"Equipamento {st_atual} reativado e removido do painel!")
                                             import time
                                             time.sleep(1)
@@ -1040,7 +1052,11 @@ elif menu == "Baixas":
                                     
                                     # Altera para Inativo
                                     supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
-                                    registrar_log("Baixa", f'O administrador deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
+                                    registrar_log(
+                                        "Baixa",
+                                        f'O administrador deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.',
+                                        dict_equips[st_selecionada].get("colaborador", "Não informado"),
+                                    )
                                     
                                     st.success(f"Baixa efetuada e equipamento (ST: {st_selecionada}) definido como Inativo com sucesso!")
                                     import time
@@ -1393,7 +1409,7 @@ elif menu == "Log de Atividades":
         df_logs = pd.DataFrame(logs.data)
         df_logs = df_logs.rename(columns={
             "created_at": "Data/Hora Evento",
-            "usuario_email": "Operador",
+            "usuario_email": "Colaborador Responsável",
             "acao": "Operação",
             "resumo": "Histórico Detalhado"
         })
