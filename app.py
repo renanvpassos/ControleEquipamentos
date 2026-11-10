@@ -1339,7 +1339,7 @@ elif menu == "Lista de Equipamentos":
             st.info("Nenhum equipamento cadastrado ate o momento.")
         else:
             total_registros = len(lista_grupos)
-            itens_por_pagina = 15
+            itens_por_pagina = 4
             total_paginas = max(1, (total_registros + itens_por_pagina - 1) // itens_por_pagina)
 
             filtro_paginacao = f"{pesquisa}|{colaborador_selecionado}|{total_registros}"
