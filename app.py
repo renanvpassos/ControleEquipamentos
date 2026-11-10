@@ -578,7 +578,7 @@ if menu == "Cadastrar Equipamento":
             with col_tag:
                 service_tag = st.text_input("Etiqueta Patrimônio Mult (se tiver)", key=f"{cadastro_prefixo}_tag_{chave}")
         with col_lixeira:
-            st.write("")
+            st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
             if st.button("🗑️", key=f"{cadastro_prefixo}_remover_{chave}", help="Remover este equipamento"):
                 if len(itens_cadastro) > 1:
                     st.session_state[itens_key] = [
@@ -589,7 +589,7 @@ if menu == "Cadastrar Equipamento":
                 else:
                     st.warning("O cadastro precisa ter pelo menos um equipamento.")
         with col_foto:
-            st.write("")
+            st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
             foto = st.file_uploader(
                 "Foto do equipamento*",
                 type=["png", "jpg", "jpeg"],
@@ -943,7 +943,7 @@ elif menu == "Editar Cadastro":
                     key=f"{itens_key}_status_{chave}",
                 )
             with col_foto:
-                st.write("")
+                st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
                 foto_nova = st.file_uploader(
                     "Foto do equipamento*",
                     type=["png", "jpg", "jpeg"],
@@ -952,7 +952,7 @@ elif menu == "Editar Cadastro":
                     help="Envie uma nova foto para este equipamento.",
                 )
             with col_lixeira:
-                st.write("")
+                st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
                 if st.button("🗑️", key=f"{itens_key}_remover_{chave}", help="Remover este equipamento"):
                     if len(itens_edicao) > 1:
                         st.session_state[itens_key] = [
