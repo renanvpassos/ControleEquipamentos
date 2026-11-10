@@ -297,7 +297,7 @@ def registrar_log(acao, resumo, colaborador):
         )
 
 
-def gerar_proximo_codigo_controle():
+def gerar_proximos_codigos_controle(quantidade):
     codigos_cadastrados = []
     inicio = 0
     tamanho_pagina = 1000
@@ -320,7 +320,8 @@ def gerar_proximo_codigo_controle():
         for item in codigos_cadastrados
         if str(item.get("codigo_controle", "")).strip().isdecimal()
     ]
-    return str(max(codigos, default=-1) + 1)
+    proximo_codigo = max(codigos, default=-1) + 1
+    return [str(proximo_codigo + indice) for indice in range(quantidade)]
 
 
 # --- Funções de Geração de Arquivos (PDF e Excel) ---
@@ -563,7 +564,8 @@ if menu == "Cadastrar Equipamento":
             st.error("Não é permitido repetir a Service Tag no mesmo cadastro.")
         else:
             try:
-                codigo = gerar_proximo_codigo_controle()
+                codigos = gerar_proximos_codigos_controle(len(dados_itens))
+                codigo = codigos[0]
                 check_tags = (
                     supabase.table("equipamentos")
                     .select("service_tag")
@@ -574,6 +576,7 @@ if menu == "Cadastrar Equipamento":
                 )
             except Exception as e:
                 st.error(f"Erro ao preparar o cadastro no banco de dados: {e}")
+                codigo = None
                 check_tags = None
 
             if codigo is not None and check_tags and check_tags.data:
@@ -603,7 +606,7 @@ if menu == "Cadastrar Equipamento":
                 if not erro_upload:
                     registros = [
                         {
-                            "codigo_controle": codigo,
+                            "codigo_controle": codigos[indice],
                             "service_tag": item["service_tag"],
                             "tipo": item["tipo"],
                             "marca": item["marca"],
@@ -619,19 +622,47 @@ if menu == "Cadastrar Equipamento":
                             ),
                             "data_registro": str(date.today()),
                         }
-                        for item in dados_itens
+                        for indice, item in enumerate(dados_itens)
                     ]
-                    try:
-                        supabase.table("equipamentos").insert(registros).execute()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar o cadastro no banco de dados: {e}")
+                    erro_salvamento = None
+                    for tentativa in range(3):
+                        try:
+                            supabase.table("equipamentos").insert(registros).execute()
+                        except Exception as e:
+                            erro_salvamento = e
+                            if (
+                                getattr(e, "code", None) == "23505"
+                                and "equipamentos_codigo_controle_key" in str(e)
+                                and tentativa < 2
+                            ):
+                                try:
+                                    codigos = gerar_proximos_codigos_controle(len(dados_itens))
+                                except Exception as erro_codigo:
+                                    erro_salvamento = erro_codigo
+                                    break
+                                for indice, registro in enumerate(registros):
+                                    registro["codigo_controle"] = codigos[indice]
+                                continue
+                        else:
+                            erro_salvamento = None
+                        break
+
+                    if erro_salvamento is not None:
+                        st.error(f"Erro ao salvar o cadastro no banco de dados: {erro_salvamento}")
                     else:
+                        codigo_inicial = codigos[0]
+                        codigo_final = codigos[-1]
+                        faixa_codigos = (
+                            codigo_inicial
+                            if codigo_inicial == codigo_final
+                            else f"{codigo_inicial} a {codigo_final}"
+                        )
                         if st.session_state.admin_authenticated:
                             tipos_cadastrados = ", ".join(item["tipo"] for item in dados_itens)
-                            log_msg = f'O administrador cadastrou os equipamentos "{tipos_cadastrados}", Código: {codigo}, Colaborador: "{colaborador.strip()}"'
+                            log_msg = f'O administrador cadastrou os equipamentos "{tipos_cadastrados}", Códigos: {faixa_codigos}, Colaborador: "{colaborador.strip()}"'
                             registrar_log("Inserir", log_msg, colaborador.strip())
 
-                        st.success(f"Cadastro {codigo} salvo com {len(registros)} equipamento(s)!")
+                        st.success(f"Cadastro salvo com {len(registros)} equipamento(s). Código(s): {faixa_codigos}.")
                         st.session_state.cadastro_versao += 1
                         st.rerun()
 
