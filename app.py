@@ -576,7 +576,7 @@ if menu == "Cadastrar Equipamento":
         )
 
     colaborador = st.text_input(
-        "Colaborador Responsável (Nome e Sobrenome)*",
+        "Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*",
         key=f"{cadastro_prefixo}_colaborador",
         placeholder="Ex.: Maria Silva",
     )
