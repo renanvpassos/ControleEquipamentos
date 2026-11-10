@@ -1224,12 +1224,14 @@ elif menu == "Lista de Equipamentos":
                                     st.info("Sem foto cadastrada")
 
                                 st.markdown(f"**Codigo:** {item.get('codigo_controle') or '-'}")
-                                st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
                                 for registro in itens_grupo:
                                     st.markdown(
+                                        f"**Colaborador:** {registro.get('colaborador') or '-'}  \n"
                                         f"**Tipo:** {registro.get('tipo') or '-'}  \n"
                                         f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
-                                        f"**Etiqueta Patrimônio Mult:** {registro.get('service_tag') or '-'}"
+                                        f"**Etiqueta Patrimônio Mult:** {registro.get('service_tag') or '-'}  \n"
+                                        f"**Data do cadastro:** {registro.get('data_registro') or '-'}  \n"
+                                        f"**Cadastrado por:** {registro.get('criado_por') or '-'}"
                                     )
                                     status_atual = registro.get("status") or "-"
                                     if str(status_atual).lower() == "inativo":
@@ -1240,9 +1242,9 @@ elif menu == "Lista de Equipamentos":
                                     else:
                                         st.markdown(f"**Status:** {status_atual}")
 
-                                descricao = item.get("descricao")
-                                if descricao and str(descricao).strip() not in ["", "None", "nan"]:
-                                    st.caption(str(descricao))
+                                    descricao = registro.get("descricao")
+                                    if descricao and str(descricao).strip() not in ["", "None", "nan"]:
+                                        st.markdown(f"**Descrição:** {descricao}")
                                     
                                 if is_inativo:
                                     st.markdown("</div>", unsafe_allow_html=True)
