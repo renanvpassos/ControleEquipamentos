@@ -2033,7 +2033,7 @@ elif menu == "Log de Atividades":
             "created_at": "Data/Hora Evento",
             "colaborador": "Colaborador Responsável",
             "acao": "Operação",
-            "resumo": "Histórico Detalhado"
+            "resumo": "Histórico Detalhado."
         })
         if "id" in df_logs.columns:
             df_logs = df_logs.drop(columns=["id"])
