@@ -525,7 +525,7 @@ if menu == "Cadastrar Equipamento":
         st.success(mensagem_sucesso)
 
     if not st.session_state.admin_authenticated:
-        st.caption("Cadastre um equipamento sem precisar criar uma conta ou fazer login.")
+        st.caption("Cadastre o seu equipamento abaixo, os campos com * são obrigatórios.")
 
     if "cadastro_versao" not in st.session_state:
         st.session_state.cadastro_versao = 0
@@ -534,14 +534,57 @@ if menu == "Cadastrar Equipamento":
     if itens_key not in st.session_state:
         st.session_state[itens_key] = [{"chave": "0"}]
 
+    campos_obrigatorios_vazios = []
+    colaborador_key = f"{cadastro_prefixo}_colaborador"
+    if not str(st.session_state.get(colaborador_key, "") or "").strip():
+        campos_obrigatorios_vazios.append(colaborador_key)
+    for item in st.session_state[itens_key]:
+        chave = item["chave"]
+        tipo_key = f"{cadastro_prefixo}_tipo_{chave}"
+        tipo_atual = st.session_state.get(tipo_key)
+        if not tipo_atual:
+            campos_obrigatorios_vazios.append(tipo_key)
+        elif tipo_atual != "Estação de Trabalho":
+            marca_key = f"{cadastro_prefixo}_marca_{chave}"
+            if not st.session_state.get(marca_key):
+                campos_obrigatorios_vazios.append(marca_key)
+        foto_key = f"{cadastro_prefixo}_foto_{chave}"
+        if not st.session_state.get(foto_key):
+            campos_obrigatorios_vazios.append(foto_key)
+
+    if campos_obrigatorios_vazios:
+        estilos_campos_vazios = []
+        for campo_key in campos_obrigatorios_vazios:
+            seletor_campo = f".st-key-{campo_key}"
+            estilos_campos_vazios.append(
+                f"""
+                {seletor_campo} input,
+                {seletor_campo} textarea,
+                {seletor_campo} [data-baseweb="select"] > div {{
+                    background-color: #fff1f0 !important;
+                    border-color: #f2a6a0 !important;
+                }}
+                {seletor_campo} [data-testid="stFileUploaderDropzone"] {{
+                    background-color: #fff1f0 !important;
+                    border-color: #f2a6a0 !important;
+                }}
+                """
+            )
+        st.markdown(
+            f"<style>{''.join(estilos_campos_vazios)}</style>",
+            unsafe_allow_html=True,
+        )
+
     colaborador = st.text_input(
         "Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*",
         key=f"{cadastro_prefixo}_colaborador",
+        placeholder="Ex.: Maria Silva",
     )
     descricao = st.text_area(
         "Tem algum detalhe no equipamento? Descreva abaixo (max 240 caracteres).",
         max_chars=240,
         key=f"{cadastro_prefixo}_descricao",
+        placeholder="Ex.: a tela apresenta riscos ou o teclado está com uma tecla solta.",
     )
 
     st.markdown("**Equipamentos do cadastro**")
@@ -560,8 +603,10 @@ if menu == "Cadastrar Equipamento":
         with col_tipo:
             tipo = st.selectbox(
                 "Tipo de equipamento*",
-                [""] + TIPOS_EQUIPAMENTO,
+                TIPOS_EQUIPAMENTO,
                 key=f"{cadastro_prefixo}_tipo_{chave}",
+                index=None,
+                placeholder="Ex.: Monitor",
             )
         if tipo == "Estação de Trabalho":
             st.session_state.pop(f"{cadastro_prefixo}_marca_{chave}", None)
@@ -574,13 +619,23 @@ if menu == "Cadastrar Equipamento":
             with col_marca:
                 marca = st.selectbox(
                     "Marca*",
-                    [""] + MARCAS_EQUIPAMENTO,
+                    MARCAS_EQUIPAMENTO,
                     key=f"{cadastro_prefixo}_marca_{chave}",
+                    index=None,
+                    placeholder="Ex.: Dell",
                 )
             with col_modelo:
-                modelo = st.text_input("Modelo", key=f"{cadastro_prefixo}_modelo_{chave}")
+                modelo = st.text_input(
+                    "Modelo",
+                    key=f"{cadastro_prefixo}_modelo_{chave}",
+                    placeholder="Ex.: Latitude 5420",
+                )
             with col_tag:
-                service_tag = st.text_input("Etiqueta Patrimônio Mult (se tiver)", key=f"{cadastro_prefixo}_tag_{chave}")
+                service_tag = st.text_input(
+                    "Etiqueta Patrimônio Mult (se tiver)",
+                    key=f"{cadastro_prefixo}_tag_{chave}",
+                    placeholder="Ex.: ABC1234",
+                )
         with col_lixeira:
             st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
             if st.button("🗑️", key=f"{cadastro_prefixo}_remover_{chave}", help="Remover este equipamento"):
@@ -599,7 +654,7 @@ if menu == "Cadastrar Equipamento":
                 type=["png", "jpg", "jpeg"],
                 key=f"{cadastro_prefixo}_foto_{chave}",
                 label_visibility="collapsed",
-                help="Anexe uma foto deste equipamento.",
+                help="Anexe uma foto nítida do equipamento inteiro, de preferência com a etiqueta visível.",
             )
         dados_itens.append({
             "tipo": tipo,
