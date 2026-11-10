@@ -283,7 +283,7 @@ if st.session_state.admin_access_requested and not st.session_state.admin_authen
 # --- Funções Auxiliares de Log ---
 def registrar_log(acao, resumo, colaborador):
     try:
-        supabase.table("logs").insert({
+        supabase.table("logs_sistema").insert({
             "usuario_email": colaborador,
             "acao": acao,
             "resumo": resumo
@@ -291,7 +291,7 @@ def registrar_log(acao, resumo, colaborador):
     except APIError:
         st.warning(
             "A operação foi concluída, mas não foi possível registrar a atividade. "
-            "Verifique as colunas da tabela `logs` (`usuario_email`, `acao` e "
+            "Verifique as colunas da tabela `logs_sistema` (`usuario_email`, `acao` e "
             "`resumo`) e as políticas de INSERT (RLS) no Supabase."
         )
 
@@ -1404,9 +1404,9 @@ elif menu == "Log de Atividades":
     st.caption("Exibe todas as inserções, atualizações e exclusões em tempo real.")
     
     try:
-        logs = supabase.table("logs").select("*").execute()
+        logs = supabase.table("logs_sistema").select("*").execute()
     except APIError as e:
-        st.error(f"Erro ao consultar a tabela `logs` no Supabase: {e}")
+        st.error(f"Erro ao consultar a tabela `logs_sistema` no Supabase: {e}")
         st.stop()
     
     if logs.data:
