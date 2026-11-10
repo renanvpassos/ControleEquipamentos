@@ -434,30 +434,22 @@ if menu == "Cadastrar Equipamento":
         colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
         descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
         
-        col1, col2 = st.columns(2)
-        with col1:
-            codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
-        with col2:
-            service_tag_input = st.text_input("Service Tag (Obrigatório)*")
+        codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
         
         fotos = st.file_uploader("Fotos do equipamento (Obrigatório - Máx 10 fotos)*", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
         
         if st.form_submit_button("Salvar Cadastro"):
             codigo = codigo_input.strip().upper()
-            service_tag = service_tag_input.strip().upper()
             
-            if not tipo or not marca or not colaborador.strip() or not codigo or not service_tag or not fotos or len(fotos) == 0:
+            if not tipo or not marca or not colaborador.strip() or not codigo or not fotos or len(fotos) == 0:
                 st.error("Por favor, preencha todos os campos obrigatórios (*) e anexe pelo menos uma foto.")
             elif len(fotos) > 10:
                 st.error("Permitido anexar no máximo 10 fotos.")
             else:
                 check_codigo = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
-                check_service_tag = supabase.table("equipamentos").select("id").eq("service_tag", service_tag).execute()
                 
                 if check_codigo.data:
                     st.error(f"Já existe um equipamento cadastrado com o código {codigo}.")
-                elif check_service_tag.data:
-                    st.error(f"Já existe um equipamento cadastrado com a Service Tag {service_tag}.")
                 else:
                     urls_fotos = []
                     erro_upload = False
@@ -478,7 +470,7 @@ if menu == "Cadastrar Equipamento":
                     if not erro_upload:
                         supabase.table("equipamentos").insert({
                             "codigo_controle": codigo,
-                            "service_tag": service_tag,
+                            "service_tag": None,
                             "tipo": tipo,
                             "marca": marca,
                             "modelo": modelo if modelo else None,
@@ -495,10 +487,10 @@ if menu == "Cadastrar Equipamento":
                         }).execute()
                         
                         if st.session_state.admin_authenticated:
-                            log_msg = f'O administrador cadastrou o equipamento: "{tipo}", "Código": {codigo}, "Service Tag": {service_tag}, "Colaborador": "{colaborador.strip()}"'
+                            log_msg = f'O administrador cadastrou o equipamento: "{tipo}", "Código": {codigo}, "Colaborador": "{colaborador.strip()}"'
                             registrar_log("Inserir", log_msg, colaborador.strip())
                         
-                        st.success(f"Equipamento {codigo} (ST: {service_tag}) cadastrado com sucesso!")
+                        st.success(f"Equipamento {codigo} cadastrado com sucesso!")
                         import time
                         time.sleep(2)
                         st.rerun()
@@ -563,7 +555,11 @@ elif menu == "Editar Cadastro":
         
         with st.form("form_edicao_master"):
             ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
-            ed_st = st.text_input("Service Tag", value=str(equip_selecionado.get('service_tag') or ""))
+            ed_st = st.text_input(
+                "Service Tag (Opcional)",
+                value=str(equip_selecionado.get('service_tag') or ""),
+                help="Você pode deixar em branco e adicionar a Service Tag depois.",
+            )
             
             tipos_padrao = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
             ed_tipo_idx = tipos_padrao.index(equip_selecionado['tipo']) if equip_selecionado['tipo'] in tipos_padrao else 0
@@ -604,10 +600,27 @@ elif menu == "Editar Cadastro":
             btn_deletar = st.form_submit_button("🗑️ Excluir Equipamento Permanentemente")
             
             if btn_salvar:
+                service_tag = ed_st.strip().upper() or None
+                service_tag_duplicada = False
+                if service_tag:
+                    res_service_tag = (
+                        supabase.table("equipamentos")
+                        .select("id")
+                        .eq("service_tag", service_tag)
+                        .execute()
+                    )
+                    id_equipamento_atual = equip_selecionado.get("id")
+                    service_tag_duplicada = any(
+                        item.get("id") != id_equipamento_atual
+                        for item in (res_service_tag.data or [])
+                    )
+
                 if not ed_codigo.strip():
                     st.error("O campo Código do Equipamento é obrigatório.")
                 elif not ed_colab.strip():
                     st.error("O campo Colaborador Responsável é obrigatório.")
+                elif service_tag_duplicada:
+                    st.error(f"Já existe um equipamento cadastrado com a Service Tag {service_tag}.")
                 else:
                     urls_finais = list(fotos_para_manter)
                     erro_upload = False
@@ -633,7 +646,7 @@ elif menu == "Editar Cadastro":
                         try:
                             supabase.table("equipamentos").update({
                                 "codigo_controle": ed_codigo.strip(),
-                                "service_tag": ed_st.strip(),
+                                "service_tag": service_tag,
                                 "tipo": ed_tipo,
                                 "marca": ed_marca,
                                 "modelo": ed_modelo if ed_modelo else None,
