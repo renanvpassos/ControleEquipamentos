@@ -1175,20 +1175,21 @@ elif menu == "Lista de Equipamentos":
         for chave, grupo in grupos_colaboradores.items():
             if colaborador_selecionado is not None and chave != colaborador_selecionado:
                 continue
-            if pesquisa_normalizada and not grupo.astype(str).apply(
-                lambda coluna: coluna.str.lower().str.contains(
-                    pesquisa_normalizada, na=False
-                )
-            ).any(axis=1).any():
+            if pesquisa_normalizada and not any(
+                registro.astype(str)
+                .str.lower()
+                .str.contains(pesquisa_normalizada, na=False)
+                .any()
+                for registro in grupo
+            ):
                 continue
             grupos_exibicao[chave] = grupo
 
-        lista_grupos = [
-            [registro for _, registro in grupo.iterrows()]
-            for grupo in grupos_exibicao.values()
-        ]
+        lista_grupos = list(grupos_exibicao.values())
         df_exibicao = (
-            pd.concat(list(grupos_exibicao.values()), ignore_index=True)
+            pd.DataFrame(
+                [registro for grupo in lista_grupos for registro in grupo]
+            ).reset_index(drop=True)
             if grupos_exibicao
             else df_completo.iloc[0:0].copy()
         )
