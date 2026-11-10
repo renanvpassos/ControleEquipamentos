@@ -18,6 +18,7 @@ from postgrest.exceptions import APIError
 BUCKET_FOTOS = "equipamentos-fotos"
 TIPOS_EQUIPAMENTO = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
 MARCAS_EQUIPAMENTO = ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"]
+MARCA_NAO_APLICAVEL = "Não se aplica"
 
 def obter_lista_fotos(valor):
     if valor is None:
@@ -599,7 +600,7 @@ if menu == "Cadastrar Equipamento":
         if workstation:
             col_tipo, col_foto, col_lixeira = st.columns([7.5, 1.2, 0.45])
         else:
-            col_tipo, col_marca, col_modelo, col_tag, col_foto, col_lixeira = st.columns([2.2, 1.8, 1.8, 1.8, 1.2, 0.45])
+            col_tipo, col_marca, col_tag, col_foto, col_lixeira = st.columns([2.2, 1.8, 1.8, 1.2, 0.45])
         with col_tipo:
             tipo = st.selectbox(
                 "Tipo de equipamento*",
@@ -610,10 +611,8 @@ if menu == "Cadastrar Equipamento":
             )
         if tipo == "Estação de Trabalho":
             st.session_state.pop(f"{cadastro_prefixo}_marca_{chave}", None)
-            st.session_state.pop(f"{cadastro_prefixo}_modelo_{chave}", None)
             st.session_state.pop(f"{cadastro_prefixo}_tag_{chave}", None)
-            marca = None
-            modelo = ""
+            marca = MARCA_NAO_APLICAVEL
             service_tag = ""
         else:
             with col_marca:
@@ -623,12 +622,6 @@ if menu == "Cadastrar Equipamento":
                     key=f"{cadastro_prefixo}_marca_{chave}",
                     index=None,
                     placeholder="Ex.: Dell",
-                )
-            with col_modelo:
-                modelo = st.text_input(
-                    "Modelo",
-                    key=f"{cadastro_prefixo}_modelo_{chave}",
-                    placeholder="Ex.: Latitude 5420",
                 )
             with col_tag:
                 service_tag = st.text_input(
@@ -660,7 +653,6 @@ if menu == "Cadastrar Equipamento":
         dados_itens.append({
             "tipo": tipo,
             "marca": marca,
-            "modelo": modelo.strip(),
             "service_tag": service_tag.strip().upper() or None,
             "fotos": fotos,
         })
@@ -770,7 +762,6 @@ if menu == "Cadastrar Equipamento":
                             "service_tag": item["service_tag"],
                             "tipo": item["tipo"],
                             "marca": item["marca"],
-                            "modelo": item["modelo"] or None,
                             "colaborador": colaborador.strip(),
                             "descricao": descricao.strip() or None,
                             "fotos": fotos_por_item[indice],
@@ -975,7 +966,7 @@ elif menu == "Editar Cadastro":
                 st.session_state.pop(f"{itens_key}_marca_{chave}", None)
                 st.session_state.pop(f"{itens_key}_modelo_{chave}", None)
                 st.session_state.pop(f"{itens_key}_tag_{chave}", None)
-                marca = None
+                marca = MARCA_NAO_APLICAVEL
                 modelo = ""
                 service_tag = ""
             else:
