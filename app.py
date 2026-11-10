@@ -15,6 +15,8 @@ import streamlit.components.v1 as components
 from postgrest.exceptions import APIError
 
 BUCKET_FOTOS = "equipamentos-fotos"
+TIPOS_EQUIPAMENTO = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
+MARCAS_EQUIPAMENTO = ["Estação", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"]
 
 def obter_lista_fotos(valor):
     if valor is None:
@@ -426,56 +428,138 @@ if menu == "Cadastrar Equipamento":
     st.header("Cadastro de Equipamentos")
     if not st.session_state.admin_authenticated:
         st.caption("Cadastre um equipamento sem precisar criar uma conta ou fazer login.")
-    
-    with st.form("cadastro_equipamento_form"):
-        tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"])
-        marca = st.selectbox("Marca (Obrigatório)*", ["", "Estação", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"])
-        modelo = st.text_input("Modelo (Opcional)")
-        colaborador = st.text_input("Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*")
-        descricao = st.text_area("Descrição (Opcional - Máx. 240 caracteres)", max_chars=240)
-        
-        codigo_input = st.text_input("Código do Equipamento (Obrigatório)*")
-        
-        fotos = st.file_uploader("Fotos do equipamento (Obrigatório - Máx 10 fotos)*", type=["png", "jpg", "jpeg"], accept_multiple_files=True)
-        
-        if st.form_submit_button("Salvar Cadastro"):
-            codigo = codigo_input.strip().upper()
-            
-            if not tipo or not marca or not colaborador.strip() or not codigo or not fotos or len(fotos) == 0:
-                st.error("Por favor, preencha todos os campos obrigatórios (*) e anexe pelo menos uma foto.")
-            elif len(fotos) > 10:
-                st.error("Permitido anexar no máximo 10 fotos.")
-            else:
-                check_codigo = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
-                
-                if check_codigo.data:
-                    st.error(f"Já existe um equipamento cadastrado com o código {codigo}.")
+
+    if "cadastro_versao" not in st.session_state:
+        st.session_state.cadastro_versao = 0
+    cadastro_prefixo = f"cadastro_{st.session_state.cadastro_versao}"
+    itens_key = f"{cadastro_prefixo}_itens"
+    if itens_key not in st.session_state:
+        st.session_state[itens_key] = [{"chave": "0"}]
+
+    codigo_input = st.text_input("Código do Cadastro (Obrigatório)*", key=f"{cadastro_prefixo}_codigo")
+    colaborador = st.text_input(
+        "Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*",
+        key=f"{cadastro_prefixo}_colaborador",
+    )
+    descricao = st.text_area(
+        "Descrição (Opcional - Máx. 240 caracteres)",
+        max_chars=240,
+        key=f"{cadastro_prefixo}_descricao",
+    )
+
+    st.markdown("**Equipamentos do cadastro**")
+    itens_cadastro = st.session_state[itens_key]
+    dados_itens = []
+    for indice, item in enumerate(itens_cadastro):
+        chave = item["chave"]
+        col_tipo, col_marca, col_modelo, col_tag, col_lixeira = st.columns([2, 2, 2, 2, 0.6])
+        with col_tipo:
+            tipo = st.selectbox(
+                "Tipo de equipamento*",
+                [""] + TIPOS_EQUIPAMENTO,
+                key=f"{cadastro_prefixo}_tipo_{chave}",
+            )
+        with col_marca:
+            marca = st.selectbox(
+                "Marca*",
+                [""] + MARCAS_EQUIPAMENTO,
+                key=f"{cadastro_prefixo}_marca_{chave}",
+            )
+        with col_modelo:
+            modelo = st.text_input("Modelo", key=f"{cadastro_prefixo}_modelo_{chave}")
+        with col_tag:
+            service_tag = st.text_input("Service Tag (opcional)", key=f"{cadastro_prefixo}_tag_{chave}")
+        with col_lixeira:
+            st.write("")
+            if st.button("🗑️", key=f"{cadastro_prefixo}_remover_{chave}", help="Remover este equipamento"):
+                if len(itens_cadastro) > 1:
+                    st.session_state[itens_key] = [
+                        item_atual for item_atual in itens_cadastro
+                        if item_atual["chave"] != chave
+                    ]
+                    st.rerun()
                 else:
-                    urls_fotos = []
-                    erro_upload = False
-                
-                    with st.spinner("Enviando fotos para o servidor..."):
-                        for idx, foto in enumerate(fotos):
-                            extensao = foto.name.split(".")[-1]
-                            caminho_storage = f"{codigo}/{codigo}_{idx}_{int(datetime.now().timestamp())}.{extensao}"
-                            try:
-                                supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                                url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                                urls_fotos.append(url)
-                            except Exception as e:
-                                st.error(f"Falha ao enviar a foto {foto.name}: {e}")
-                                erro_upload = True
-                                break
-                    
-                    if not erro_upload:
-                        supabase.table("equipamentos").insert({
+                    st.warning("O cadastro precisa ter pelo menos um equipamento.")
+        dados_itens.append({
+            "tipo": tipo,
+            "marca": marca,
+            "modelo": modelo.strip(),
+            "service_tag": service_tag.strip().upper() or None,
+        })
+
+    col_adicionar, _ = st.columns([1, 8])
+    with col_adicionar:
+        if st.button("➕ Adicionar equipamento", key=f"{cadastro_prefixo}_adicionar"):
+            proxima_chave = str(max(int(item["chave"]) for item in itens_cadastro) + 1)
+            st.session_state[itens_key] = itens_cadastro + [{"chave": proxima_chave}]
+            st.rerun()
+
+    fotos = st.file_uploader(
+        "Fotos do cadastro (Obrigatório - Máx. 10 fotos)*",
+        type=["png", "jpg", "jpeg"],
+        accept_multiple_files=True,
+        key=f"{cadastro_prefixo}_fotos",
+    )
+
+    if st.button("Salvar Cadastro", key=f"{cadastro_prefixo}_salvar"):
+        codigo = codigo_input.strip().upper()
+        tags = [item["service_tag"] for item in dados_itens if item["service_tag"]]
+        tags_repetidas = len(tags) != len(set(tags))
+        itens_invalidos = any(not item["tipo"] or not item["marca"] for item in dados_itens)
+
+        if itens_invalidos or not colaborador.strip() or not codigo or not fotos:
+            st.error("Preencha os campos obrigatórios (*) de cada equipamento, o colaborador, o código e anexe pelo menos uma foto.")
+        elif len(fotos) > 10:
+            st.error("Permitido anexar no máximo 10 fotos.")
+        elif tags_repetidas:
+            st.error("Não é permitido repetir a Service Tag no mesmo cadastro.")
+        else:
+            check_codigo = supabase.table("equipamentos").select("id").eq("codigo_controle", codigo).execute()
+            check_tags = (
+                supabase.table("equipamentos")
+                .select("service_tag")
+                .in_("service_tag", tags)
+                .execute()
+                if tags
+                else None
+            )
+
+            if check_codigo.data:
+                st.error(f"Já existe um cadastro com o código {codigo}.")
+            elif check_tags and check_tags.data:
+                tags_existentes = {
+                    item.get("service_tag")
+                    for item in check_tags.data
+                    if item.get("service_tag")
+                }
+                st.error(f"Já existe equipamento cadastrado com a Service Tag: {', '.join(sorted(tags_existentes))}.")
+            else:
+                urls_fotos = []
+                erro_upload = False
+                with st.spinner("Enviando fotos para o servidor..."):
+                    for idx, foto in enumerate(fotos):
+                        extensao = foto.name.split(".")[-1]
+                        caminho_storage = f"{codigo}/{codigo}_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                        try:
+                            supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                            urls_fotos.append(
+                                supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                            )
+                        except Exception as e:
+                            st.error(f"Falha ao enviar a foto {foto.name}: {e}")
+                            erro_upload = True
+                            break
+
+                if not erro_upload:
+                    registros = [
+                        {
                             "codigo_controle": codigo,
-                            "service_tag": None,
-                            "tipo": tipo,
-                            "marca": marca,
-                            "modelo": modelo if modelo else None,
+                            "service_tag": item["service_tag"],
+                            "tipo": item["tipo"],
+                            "marca": item["marca"],
+                            "modelo": item["modelo"] or None,
                             "colaborador": colaborador.strip(),
-                            "descricao": descricao if descricao else None,
+                            "descricao": descricao.strip() or None,
                             "fotos": urls_fotos,
                             "status": "Ativo",
                             "criado_por": (
@@ -483,16 +567,22 @@ if menu == "Cadastrar Equipamento":
                                 if st.session_state.admin_authenticated
                                 else "Acesso público"
                             ),
-                            "data_registro": str(date.today())
-                        }).execute()
-                        
+                            "data_registro": str(date.today()),
+                        }
+                        for item in dados_itens
+                    ]
+                    try:
+                        supabase.table("equipamentos").insert(registros).execute()
+                    except Exception as e:
+                        st.error(f"Erro ao salvar o cadastro no banco de dados: {e}")
+                    else:
                         if st.session_state.admin_authenticated:
-                            log_msg = f'O administrador cadastrou o equipamento: "{tipo}", "Código": {codigo}, "Colaborador": "{colaborador.strip()}"'
+                            tipos_cadastrados = ", ".join(item["tipo"] for item in dados_itens)
+                            log_msg = f'O administrador cadastrou os equipamentos "{tipos_cadastrados}", Código: {codigo}, Colaborador: "{colaborador.strip()}"'
                             registrar_log("Inserir", log_msg, colaborador.strip())
-                        
-                        st.success(f"Equipamento {codigo} cadastrado com sucesso!")
-                        import time
-                        time.sleep(2)
+
+                        st.success(f"Cadastro {codigo} salvo com {len(registros)} equipamento(s)!")
+                        st.session_state.cadastro_versao += 1
                         st.rerun()
 
 # --- 2. EDITAR CADASTRO ---
@@ -501,179 +591,355 @@ elif menu == "Editar Cadastro":
     
     res_busca = supabase.table("equipamentos").select("*").execute()
     todos_equipamentos = res_busca.data if res_busca.data else []
+    grupos_por_codigo = {}
+    for equipamento in todos_equipamentos:
+        codigo_grupo = str(equipamento.get("codigo_controle") or f"sem_codigo_{equipamento.get('id')}")
+        grupos_por_codigo.setdefault(codigo_grupo, []).append(equipamento)
+
     equip_selecionado = None
-
-    metodo_busca = st.radio("Como deseja localizar o equipamento?", ["Por busca textual", "Por Colaborador/Tipo"])
-
-    if metodo_busca == "Por busca textual":
-        busca_ref = st.text_input("Buscar equipamento para edição (Digite qualquer referência: Código, Nome, Colaborador, Marca...):")
-        
-        if busca_ref:
-            resultados = []
-            ref_lower = busca_ref.lower()
-            
-            for item in todos_equipamentos:
-                if (ref_lower in str(item.get("codigo_controle", "")).lower() or
-                    ref_lower in str(item.get("service_tag", "")).lower() or
-                    ref_lower in str(item.get("tipo", "")).lower() or
-                    ref_lower in str(item.get("marca", "")).lower() or
-                    ref_lower in str(item.get("modelo", "")).lower() or
-                    ref_lower in str(item.get("colaborador", "")).lower()):
-                    resultados.append(item)
-                    
-            if not resultados:
-                st.warning("Nenhum equipamento foi localizado com essa referência.")
-            else:
-                opcoes_select = {f"{i['codigo_controle']} - {i['tipo']} ({i['colaborador']})": i for i in resultados}
-                escolha = st.selectbox("Selecione o equipamento exato para manipular:", list(opcoes_select.keys()))
-                equip_selecionado = opcoes_select[escolha]
-
+    if not todos_equipamentos:
+        st.warning("Nenhum equipamento cadastrado no banco de dados.")
     else:
-        if not todos_equipamentos:
-            st.warning("Nenhum equipamento cadastrado no banco de dados.")
+        metodo_busca = st.radio("Como deseja localizar o cadastro?", ["Por busca textual", "Por Colaborador/Tipo"])
+        opcoes_grupos = {
+            f"{codigo} - {grupo[0].get('colaborador') or 'Sem colaborador'} ({len(grupo)} equipamento(s))": grupo
+            for codigo, grupo in grupos_por_codigo.items()
+        }
+
+        if metodo_busca == "Por busca textual":
+            busca_ref = st.text_input("Buscar cadastro (Código, Service Tag, tipo, marca, modelo ou colaborador):")
+            if busca_ref:
+                ref_lower = busca_ref.lower()
+                codigos_encontrados = {
+                    str(item.get("codigo_controle") or f"sem_codigo_{item.get('id')}")
+                    for item in todos_equipamentos
+                    if any(
+                        ref_lower in str(item.get(campo, "")).lower()
+                        for campo in (
+                            "codigo_controle",
+                            "service_tag",
+                            "tipo",
+                            "marca",
+                            "modelo",
+                            "colaborador",
+                        )
+                    )
+                }
+                opcoes_encontradas = {
+                    label: grupo
+                    for label, grupo in opcoes_grupos.items()
+                    if str(grupo[0].get("codigo_controle") or f"sem_codigo_{grupo[0].get('id')}")
+                    in codigos_encontrados
+                }
+                if not opcoes_encontradas:
+                    st.warning("Nenhum cadastro foi localizado com essa referência.")
+                else:
+                    escolha = st.selectbox("Selecione o cadastro para editar:", list(opcoes_encontradas.keys()))
+                    equip_selecionado = opcoes_encontradas[escolha]
         else:
-            colaboradores_disponiveis = sorted(list(set([item["colaborador"] for item in todos_equipamentos if item.get("colaborador")])))
-            colab_escolhido = st.selectbox("Selecione o Colaborador:", ["Selecione..."] + colaboradores_disponiveis)
-            
+            colaboradores_disponiveis = sorted({
+                item["colaborador"]
+                for item in todos_equipamentos
+                if item.get("colaborador")
+            })
+            colab_escolhido = st.selectbox(
+                "Selecione o Colaborador:",
+                ["Selecione..."] + colaboradores_disponiveis,
+            )
             if colab_escolhido != "Selecione...":
-                equips_do_colab = [item for item in todos_equipamentos if item.get("colaborador") == colab_escolhido]
-                tipos_disponiveis = sorted(list(set([item["tipo"] for item in equips_do_colab if item.get("tipo")])))
-                tipo_escolhido = st.selectbox("Selecione o Tipo de Equipamento:", ["Selecione..."] + tipos_disponiveis)
-                
-                if tipo_escolhido != "Selecione...":
-                    equips_finais = [item for item in equips_do_colab if item.get("tipo") == tipo_escolhido]
-                    opcoes_finais = {f"{i['codigo_controle']} - {i['marca']} {i.get('modelo', '')}": i for i in equips_finais}
-                    
-                    if len(opcoes_finais) == 1:
-                        equip_selecionado = list(opcoes_finais.values())[0]
-                    else:
-                        escolha_final = st.selectbox("Mais de um equipamento encontrado. Selecione pelo Código/Marca:", list(opcoes_finais.keys()))
-                        equip_selecionado = opcoes_finais[escolha_final]
+                equips_do_colab = [
+                    item for item in todos_equipamentos
+                    if item.get("colaborador") == colab_escolhido
+                ]
+                tipos_disponiveis = sorted({
+                    item["tipo"] for item in equips_do_colab if item.get("tipo")
+                })
+                tipo_escolhido = st.selectbox(
+                    "Selecione o Tipo de Equipamento:",
+                    ["Todos"] + tipos_disponiveis,
+                )
+                grupos_encontrados = {
+                    str(item.get("codigo_controle") or f"sem_codigo_{item.get('id')}")
+                    for item in equips_do_colab
+                    if tipo_escolhido == "Todos" or item.get("tipo") == tipo_escolhido
+                }
+                opcoes_encontradas = {
+                    label: grupo
+                    for label, grupo in opcoes_grupos.items()
+                    if str(grupo[0].get("codigo_controle") or f"sem_codigo_{grupo[0].get('id')}")
+                    in grupos_encontrados
+                }
+                if opcoes_encontradas:
+                    escolha = st.selectbox("Selecione o cadastro:", list(opcoes_encontradas.keys()))
+                    equip_selecionado = opcoes_encontradas[escolha]
 
     if equip_selecionado:
         st.markdown("---")
-        
-        with st.form("form_edicao_master"):
-            ed_codigo = st.text_input("Código do Equipamento*", value=str(equip_selecionado.get('codigo_controle') or ""))
-            ed_st = st.text_input(
-                "Service Tag (Opcional)",
-                value=str(equip_selecionado.get('service_tag') or ""),
-                help="Você pode deixar em branco e adicionar a Service Tag depois.",
-            )
-            
-            tipos_padrao = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
-            ed_tipo_idx = tipos_padrao.index(equip_selecionado['tipo']) if equip_selecionado['tipo'] in tipos_padrao else 0
-            ed_tipo = st.selectbox("Tipo de Equipamento*", tipos_padrao, index=ed_tipo_idx)
-            
-            marcas_padrao = ["Estação", "Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"]
-            ed_marca_idx = marcas_padrao.index(equip_selecionado['marca']) if equip_selecionado['marca'] in marcas_padrao else 0
-            ed_marca = st.selectbox("Marca*", marcas_padrao, index=ed_marca_idx)
-            
-            ed_modelo = st.text_input("Modelo", value=equip_selecionado.get('modelo') or "")
-            ed_colab = st.text_input("Colaborador Responsável*", value=equip_selecionado.get('colaborador') or "")
-            ed_desc = st.text_area("Descrição (Máx. 240 car.)", value=equip_selecionado.get('descricao') or "", max_chars=240)
-            ed_status = st.selectbox("Status", ["Ativo", "Baixado", "Inativo"], index=["Ativo", "Baixado", "Inativo"].index(equip_selecionado.get('status', 'Ativo')) if equip_selecionado.get('status') in ["Ativo", "Baixado", "Inativo"] else 0)
-            
-            lista_fotos_atual = equip_selecionado.get("fotos", [])
-            st.write("**Fotos salvas atualmente (Passe o mouse e clique nas setas ⤢ para ver em tamanho real):**")
-            fotos_para_manter = []
-            
-            if lista_fotos_atual:
-                cols = st.columns(10)
-                for i, url_f in enumerate(lista_fotos_atual):
-                    with cols[i % 10]:
-                        try:
-                            caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
-                            bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
-                            st.image(bytes_foto, use_container_width=True)
-                        except Exception:
-                            st.caption("⚠️ Erro")
-                        if st.checkbox("Manter", value=True, key=f"foto_{i}"):
-                            fotos_para_manter.append(url_f)
-            else:
-                st.caption("Nenhuma foto cadastrada.")
-            
-            st.markdown("<br>", unsafe_allow_html=True)
-            novas_fotos = st.file_uploader("Adicionar Novas Fotos (Máx Total 10 fotos acumuladas)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="novas_fotos_edit")
-            
-            btn_salvar = st.form_submit_button("Atualizar Informações")
-            btn_deletar = st.form_submit_button("🗑️ Excluir Equipamento Permanentemente")
-            
-            if btn_salvar:
-                service_tag = ed_st.strip().upper() or None
-                service_tag_duplicada = False
-                if service_tag:
-                    res_service_tag = (
-                        supabase.table("equipamentos")
-                        .select("id")
-                        .eq("service_tag", service_tag)
-                        .execute()
-                    )
-                    id_equipamento_atual = equip_selecionado.get("id")
-                    service_tag_duplicada = any(
-                        item.get("id") != id_equipamento_atual
-                        for item in (res_service_tag.data or [])
-                    )
+        equipamento_base = equip_selecionado[0]
+        grupo_key = str(equipamento_base.get("id") or equipamento_base.get("codigo_controle"))
+        itens_key = f"edicao_itens_{grupo_key}"
+        ids_grupo = {item.get("id") for item in equip_selecionado if item.get("id") is not None}
+        if itens_key not in st.session_state:
+            st.session_state[itens_key] = [
+                {**item, "chave_ui": str(item.get("id") or f"legado_{indice}")}
+                for indice, item in enumerate(equip_selecionado)
+            ]
+            st.session_state[f"{itens_key}_contador"] = 0
 
-                if not ed_codigo.strip():
-                    st.error("O campo Código do Equipamento é obrigatório.")
-                elif not ed_colab.strip():
-                    st.error("O campo Colaborador Responsável é obrigatório.")
-                elif service_tag_duplicada:
-                    st.error(f"Já existe um equipamento cadastrado com a Service Tag {service_tag}.")
-                else:
-                    urls_finais = list(fotos_para_manter)
-                    erro_upload = False
-                    
-                    if novas_fotos:
-                        if (len(urls_finais) + len(novas_fotos)) > 10:
-                            st.error("A soma de fotos salvas com as novas excede o limite máximo de 10.")
-                            erro_upload = True
-                        else:
-                            for idx, foto in enumerate(novas_fotos):
-                                extensao = foto.name.split(".")[-1]
-                                caminho_storage = f"{ed_codigo.strip()}/{ed_codigo.strip()}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
-                                try:
-                                    supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                                    url = supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                                    urls_finais.append(url)
-                                except Exception as e:
-                                    st.error(f"Erro ao subir foto complementar: {e}")
-                                    erro_upload = True
-                                    break
-                    
-                    if not erro_upload:
-                        try:
-                            supabase.table("equipamentos").update({
-                                "codigo_controle": ed_codigo.strip(),
-                                "service_tag": service_tag,
-                                "tipo": ed_tipo,
-                                "marca": ed_marca,
-                                "modelo": ed_modelo if ed_modelo else None,
+        ed_codigo = st.text_input(
+            "Código do Cadastro*",
+            value=str(equipamento_base.get("codigo_controle") or ""),
+            key=f"{itens_key}_codigo",
+        )
+        ed_colab = st.text_input(
+            "Colaborador Responsável*",
+            value=equipamento_base.get("colaborador") or "",
+            key=f"{itens_key}_colaborador",
+        )
+        ed_desc = st.text_area(
+            "Descrição (Máx. 240 car.)",
+            value=equipamento_base.get("descricao") or "",
+            max_chars=240,
+            key=f"{itens_key}_descricao",
+        )
+
+        st.markdown("**Equipamentos do cadastro**")
+        dados_itens_edicao = []
+        itens_edicao = st.session_state[itens_key]
+        for indice, item in enumerate(itens_edicao):
+            chave = item["chave_ui"]
+            col_tipo, col_marca, col_modelo, col_tag, col_status, col_lixeira = st.columns([1.7, 1.7, 1.7, 1.7, 1.3, 0.6])
+            tipos_opcoes = [""] + TIPOS_EQUIPAMENTO
+            if item.get("tipo") and item["tipo"] not in tipos_opcoes:
+                tipos_opcoes.append(item["tipo"])
+            marcas_opcoes = [""] + MARCAS_EQUIPAMENTO
+            if item.get("marca") and item["marca"] not in marcas_opcoes:
+                marcas_opcoes.append(item["marca"])
+            with col_tipo:
+                tipo = st.selectbox(
+                    "Tipo*",
+                    tipos_opcoes,
+                    index=tipos_opcoes.index(item.get("tipo") or ""),
+                    key=f"{itens_key}_tipo_{chave}",
+                )
+            with col_marca:
+                marca = st.selectbox(
+                    "Marca*",
+                    marcas_opcoes,
+                    index=marcas_opcoes.index(item.get("marca") or ""),
+                    key=f"{itens_key}_marca_{chave}",
+                )
+            with col_modelo:
+                modelo = st.text_input(
+                    "Modelo",
+                    value=item.get("modelo") or "",
+                    key=f"{itens_key}_modelo_{chave}",
+                )
+            with col_tag:
+                service_tag = st.text_input(
+                    "Service Tag",
+                    value=item.get("service_tag") or "",
+                    key=f"{itens_key}_tag_{chave}",
+                )
+            with col_status:
+                status_opcoes = ["Ativo", "Baixado", "Inativo"]
+                status_atual = item.get("status") or "Ativo"
+                if status_atual not in status_opcoes:
+                    status_opcoes.append(status_atual)
+                status = st.selectbox(
+                    "Status",
+                    status_opcoes,
+                    index=status_opcoes.index(status_atual),
+                    key=f"{itens_key}_status_{chave}",
+                )
+            with col_lixeira:
+                st.write("")
+                if st.button("🗑️", key=f"{itens_key}_remover_{chave}", help="Remover este equipamento"):
+                    if len(itens_edicao) > 1:
+                        st.session_state[itens_key] = [
+                            item_atual for item_atual in itens_edicao
+                            if item_atual["chave_ui"] != chave
+                        ]
+                        st.rerun()
+                    else:
+                        st.warning("O cadastro precisa ter pelo menos um equipamento.")
+            dados_itens_edicao.append({
+                "id": item.get("id"),
+                "chave_ui": chave,
+                "tipo": tipo,
+                "marca": marca,
+                "modelo": modelo.strip(),
+                "service_tag": service_tag.strip().upper() or None,
+                "status": status,
+            })
+
+        if st.button("➕ Adicionar equipamento", key=f"{itens_key}_adicionar"):
+            contador_key = f"{itens_key}_contador"
+            contador = st.session_state[contador_key]
+            st.session_state[contador_key] += 1
+            st.session_state[itens_key] = itens_edicao + [{
+                "id": None,
+                "chave_ui": f"novo_{contador}",
+                "tipo": "",
+                "marca": "",
+                "modelo": "",
+                "service_tag": None,
+                "status": "Ativo",
+            }]
+            st.rerun()
+
+        fotos_por_grupo = []
+        for item in equip_selecionado:
+            for foto in obter_lista_fotos(item.get("fotos")):
+                if foto not in fotos_por_grupo:
+                    fotos_por_grupo.append(foto)
+        st.write("**Fotos salvas atualmente:**")
+        fotos_para_manter = []
+        if fotos_por_grupo:
+            cols = st.columns(10)
+            for i, url_f in enumerate(fotos_por_grupo):
+                with cols[i % 10]:
+                    try:
+                        caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
+                        bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
+                        st.image(bytes_foto, use_container_width=True)
+                    except Exception:
+                        st.caption("⚠️ Erro")
+                    if st.checkbox("Manter", value=True, key=f"{itens_key}_foto_{i}"):
+                        fotos_para_manter.append(url_f)
+        else:
+            st.caption("Nenhuma foto cadastrada.")
+
+        novas_fotos = st.file_uploader(
+            "Adicionar Novas Fotos (Máx. 10 no cadastro)",
+            type=["png", "jpg", "jpeg"],
+            accept_multiple_files=True,
+            key=f"{itens_key}_novas_fotos",
+        )
+        col_salvar, col_deletar = st.columns(2)
+        with col_salvar:
+            btn_salvar = st.button("Atualizar Cadastro", key=f"{itens_key}_salvar")
+        with col_deletar:
+            btn_deletar = st.button("🗑️ Excluir Cadastro Completo", key=f"{itens_key}_deletar")
+
+        if btn_salvar:
+            codigo_novo = ed_codigo.strip().upper()
+            tags = [item["service_tag"] for item in dados_itens_edicao if item["service_tag"]]
+            tags_repetidas = len(tags) != len(set(tags))
+            itens_invalidos = any(not item["tipo"] or not item["marca"] for item in dados_itens_edicao)
+            codigo_duplicado = False
+            if codigo_novo and codigo_novo != str(equipamento_base.get("codigo_controle") or "").upper():
+                res_codigo = (
+                    supabase.table("equipamentos")
+                    .select("id")
+                    .eq("codigo_controle", codigo_novo)
+                    .execute()
+                )
+                codigo_duplicado = any(item.get("id") not in ids_grupo for item in (res_codigo.data or []))
+
+            res_tags = (
+                supabase.table("equipamentos")
+                .select("id,service_tag")
+                .in_("service_tag", tags)
+                .execute()
+                if tags
+                else None
+            )
+            tags_existentes = {
+                item.get("service_tag")
+                for item in (res_tags.data if res_tags else [])
+                if item.get("service_tag") and item.get("id") not in ids_grupo
+            }
+
+            if not codigo_novo:
+                st.error("O campo Código do Cadastro é obrigatório.")
+            elif not ed_colab.strip():
+                st.error("O campo Colaborador Responsável é obrigatório.")
+            elif not dados_itens_edicao:
+                st.error("O cadastro precisa ter pelo menos um equipamento.")
+            elif itens_invalidos:
+                st.error("Selecione o tipo e a marca de cada equipamento.")
+            elif tags_repetidas:
+                st.error("Não é permitido repetir a Service Tag no mesmo cadastro.")
+            elif tags_existentes:
+                st.error(f"Já existe equipamento cadastrado com a Service Tag: {', '.join(sorted(tags_existentes))}.")
+            elif codigo_duplicado:
+                st.error(f"Já existe outro cadastro com o código {codigo_novo}.")
+            else:
+                urls_finais = list(fotos_para_manter)
+                erro_upload = False
+                if novas_fotos:
+                    if len(urls_finais) + len(novas_fotos) > 10:
+                        st.error("A soma das fotos salvas com as novas excede o limite máximo de 10.")
+                        erro_upload = True
+                    else:
+                        for idx, foto in enumerate(novas_fotos):
+                            extensao = foto.name.split(".")[-1]
+                            caminho_storage = f"{codigo_novo}/{codigo_novo}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                            try:
+                                supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                                urls_finais.append(
+                                    supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                                )
+                            except Exception as e:
+                                st.error(f"Erro ao subir foto complementar: {e}")
+                                erro_upload = True
+                                break
+
+                if not erro_upload:
+                    try:
+                        ids_mantidos = {
+                            item["id"] for item in dados_itens_edicao if item["id"] is not None
+                        }
+                        ids_removidos = ids_grupo - ids_mantidos
+                        novos_registros = []
+                        for item in dados_itens_edicao:
+                            registro = {
+                                "codigo_controle": codigo_novo,
+                                "service_tag": item["service_tag"],
+                                "tipo": item["tipo"],
+                                "marca": item["marca"],
+                                "modelo": item["modelo"] or None,
                                 "colaborador": ed_colab.strip(),
-                                "descricao": ed_desc if ed_desc else None,
-                                "status": ed_status,
-                                "fotos": urls_finais
-                            }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
-                            
-                            registrar_log(
-                                "Atualizar",
-                                f'O administrador alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).',
-                                ed_colab.strip(),
-                            )
-                            st.success("Cadastro atualizado com sucesso!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Erro ao atualizar no banco de dados. Verifique se este novo código já não está em uso: {e}")
-                            
-            if btn_deletar:
-                supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
+                                "descricao": ed_desc.strip() or None,
+                                "status": item["status"],
+                                "fotos": urls_finais,
+                            }
+                            if item["id"] is None:
+                                registro.update({
+                                    "criado_por": "Administrador",
+                                    "data_registro": str(date.today()),
+                                })
+                                novos_registros.append(registro)
+                            else:
+                                supabase.table("equipamentos").update(registro).eq("id", item["id"]).execute()
+                        if novos_registros:
+                            supabase.table("equipamentos").insert(novos_registros).execute()
+                        if ids_removidos:
+                            supabase.table("equipamentos").delete().in_("id", list(ids_removidos)).execute()
+                    except Exception as e:
+                        st.error(f"Erro ao atualizar o cadastro no banco de dados: {e}")
+                    else:
+                        registrar_log(
+                            "Atualizar",
+                            f'O administrador atualizou o cadastro {equipamento_base.get("codigo_controle")} (Novo código: {codigo_novo}; equipamentos: {len(dados_itens_edicao)}).',
+                            ed_colab.strip(),
+                        )
+                        st.success("Cadastro atualizado com sucesso!")
+                        st.rerun()
+
+        if btn_deletar:
+            try:
+                supabase.table("equipamentos").delete().in_("id", list(ids_grupo)).execute()
+            except Exception as e:
+                st.error(f"Erro ao excluir o cadastro no banco de dados: {e}")
+            else:
                 registrar_log(
                     "Deletar",
-                    f'O administrador deletou o equipamento {equip_selecionado["codigo_controle"]}.',
-                    equip_selecionado.get("colaborador", "Não informado"),
+                    f'O administrador deletou o cadastro {equipamento_base.get("codigo_controle")} com {len(ids_grupo)} equipamento(s).',
+                    equipamento_base.get("colaborador", "Não informado"),
                 )
-                st.success("Equipamento removido do banco de dados!")
+                st.success("Cadastro removido do banco de dados!")
                 st.rerun()
 
 # --- 3. LISTA DE EQUIPAMENTOS ---
@@ -747,11 +1013,21 @@ elif menu == "Lista de Equipamentos":
                 df_exibicao[c] = None
 
         df_exibicao = df_exibicao[colunas_ordenadas]
+        grupos_exibicao = {}
+        for indice_linha, item in df_exibicao.iterrows():
+            codigo_item = item.get("codigo_controle")
+            chave_grupo = (
+                str(codigo_item)
+                if pd.notna(codigo_item) and str(codigo_item).strip()
+                else f"sem_codigo_{item.get('id', indice_linha)}"
+            )
+            grupos_exibicao.setdefault(chave_grupo, []).append(item)
+        lista_grupos = list(grupos_exibicao.values())
 
         if not filtro_ativo and df_exibicao.empty:
             st.info("Nenhum equipamento cadastrado ate o momento.")
         else:
-            total_registros = len(df_exibicao)
+            total_registros = len(lista_grupos)
             itens_por_pagina = 15
             total_paginas = max(1, (total_registros + itens_por_pagina - 1) // itens_por_pagina)
 
@@ -766,11 +1042,11 @@ elif menu == "Lista de Equipamentos":
 
             inicio = (pagina_atual - 1) * itens_por_pagina
             fim = inicio + itens_por_pagina
-            df_pagina = df_exibicao.iloc[inicio:fim]
+            df_pagina = lista_grupos[inicio:fim]
 
             st.write(
                 f"Exibindo {inicio + 1 if total_registros else 0} a "
-                f"{min(fim, total_registros)} de {total_registros} registros:"
+                f"{min(fim, total_registros)} de {total_registros} cadastros:"
             )
 
             if df_exibicao.empty:
@@ -811,18 +1087,25 @@ elif menu == "Lista de Equipamentos":
                 for i in range(0, len(df_pagina), 4):
                     cols = st.columns(4)
 
-                    for col, (_, item) in zip(cols, df_pagina.iloc[i:i + 4].iterrows()):
+                    for deslocamento, (col, itens_grupo) in enumerate(
+                        zip(cols, df_pagina[i:i + 4])
+                    ):
                         with col:
-                            status_atual = item.get('status') or '-'
-                            is_inativo = str(status_atual).lower() == "inativo"
+                            item = itens_grupo[0]
+                            status_grupo = [str(registro.get("status") or "-") for registro in itens_grupo]
+                            is_inativo = all(status.lower() == "inativo" for status in status_grupo)
                             
                             with st.container(border=True):
                                 # CORREÇÃO SOLICITADA: Se o equipamento estiver Inativo, aplica opacidade/transparência em todo o card
                                 if is_inativo:
                                     st.markdown("<div style='opacity: 0.55; filter: grayscale(20%);'>", unsafe_allow_html=True)
                                 
-                                codigo_card = str(item.get("codigo_controle") or "sem_codigo").replace(" ", "_").replace("/", "_")
-                                fotos = obter_lista_fotos(item.get("fotos"))
+                                codigo_card = f"cadastro_{inicio + i + deslocamento}"
+                                fotos = []
+                                for registro in itens_grupo:
+                                    for foto in obter_lista_fotos(registro.get("fotos")):
+                                        if foto not in fotos:
+                                            fotos.append(foto)
 
                                 caminhos_fotos = []
                                 for foto in fotos:
@@ -840,16 +1123,21 @@ elif menu == "Lista de Equipamentos":
                                     st.info("Sem foto cadastrada")
 
                                 st.markdown(f"**Codigo:** {item.get('codigo_controle') or '-'}")
-                                st.markdown(f"**Tipo:** {item.get('tipo') or '-'}")
-                                st.markdown(f"**Marca/Modelo:** {item.get('marca') or '-'} / {item.get('modelo') or '-'}")
-                                st.markdown(f"**Service Tag:** {item.get('service_tag') or '-'}")
                                 st.markdown(f"**Colaborador:** {item.get('colaborador') or '-'}")
-                                
-                                # Status Inativo com fonte em Vermelho em negrito
-                                if is_inativo:
-                                    st.markdown(f"**Status:** <span style='color:red; font-weight:bold;'>{status_atual}</span>", unsafe_allow_html=True)
-                                else:
-                                    st.markdown(f"**Status:** {status_atual}")
+                                for registro in itens_grupo:
+                                    st.markdown(
+                                        f"**Tipo:** {registro.get('tipo') or '-'}  \n"
+                                        f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
+                                        f"**Service Tag:** {registro.get('service_tag') or '-'}"
+                                    )
+                                    status_atual = registro.get("status") or "-"
+                                    if str(status_atual).lower() == "inativo":
+                                        st.markdown(
+                                            f"**Status:** <span style='color:red; font-weight:bold;'>{status_atual}</span>",
+                                            unsafe_allow_html=True,
+                                        )
+                                    else:
+                                        st.markdown(f"**Status:** {status_atual}")
 
                                 descricao = item.get("descricao")
                                 if descricao and str(descricao).strip() not in ["", "None", "nan"]:
