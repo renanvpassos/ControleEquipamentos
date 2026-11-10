@@ -10,6 +10,7 @@ from reportlab.lib import colors
 import ast
 import json
 import base64
+import hmac
 import streamlit.components.v1 as components
 
 BUCKET_FOTOS = "equipamentos-fotos"
@@ -251,74 +252,37 @@ supabase = init_connection()
 
 st.set_page_config(page_title="Gestão de Equipamentos", layout="wide")
 
-# --- Lógica de Login/Cadastro ---
-if "user" not in st.session_state:
-    st.session_state.user = None
-if "user_role" not in st.session_state:
-    st.session_state.user_role = None
+# --- Acesso público e área administrativa protegida por senha ---
+if "admin_access_requested" not in st.session_state:
+    st.session_state.admin_access_requested = False
+if "admin_authenticated" not in st.session_state:
+    st.session_state.admin_authenticated = False
 
-def get_user_role(user_id):
-    try:
-        res = supabase.table("perfis").select("cargo").eq("id", user_id).single().execute()
-        if res.data:
-            return res.data.get("cargo")
-        return None
-    except Exception:
-        return None
-
-if not st.session_state.user:
-    tab1, tab2 = st.tabs(["Login", "Cadastro"])
-    with tab1:
-        email = st.text_input("Email", key="login_email")
-        senha = st.text_input("Senha", type="password", key="login_pass")
-        if st.button("Entrar"):
-            try:
-                res = supabase.auth.sign_in_with_password({"email": email, "password": senha})
-                st.session_state.user = res.user
-                st.session_state.user_role = get_user_role(res.user.id)
-                st.rerun()
-            except Exception:
-                st.error("Credenciais inválidas.")
-        if st.button("Esqueci minha senha"):
-            if email:
-                try:
-                    supabase.auth.reset_password_email(email)
-                    st.info("Verifique seu e-mail para resetar a senha.")
-                except Exception as e:
-                    st.error(f"Erro ao enviar e-mail: {e}")
-    with tab2:
-        c_email = st.text_input("Email", key="cad_email")
-        c_senha = st.text_input("Senha", type="password", key="cad_pass")
-        if st.button("Cadastrar"):
-            try:
-                res = supabase.auth.sign_up({"email": c_email, "password": c_senha})
-                if res.user:
-                    supabase.table("perfis").insert({
-                        "id": res.user.id,
-                        "email": c_email,
-                        "cargo": "Nenhum"
-                    }).execute()
-                st.info("Confirmação enviada para o seu e-mail. Verifique sua caixa de entrada.")
-            except Exception as e:
-                st.error(f"Erro ao cadastrar: {e}")
-    st.stop()
-
-# --- Verificação de Permissão Bloqueante ---
-if not st.session_state.user_role or st.session_state.user_role == "Nenhum":
-    st.sidebar.title("Menu")
-    st.sidebar.info(f"Usuário: {st.session_state.user.email}")
-    st.sidebar.warning("Cargo: Nenhum")
-    st.error("Você não possui permissões (Supervisor/Master) para acessar as funcionalidades do sistema. Solicite acesso ao administrador.")
-    if st.sidebar.button("Sair"):
-        st.session_state.user = None
-        st.session_state.user_role = None
+if st.session_state.admin_access_requested and not st.session_state.admin_authenticated:
+    st.title("Acesso à área administrativa")
+    st.caption("Informe a senha administrativa configurada nos secrets do Streamlit.")
+    with st.form("admin_login_form", clear_on_submit=True):
+        senha_admin = st.text_input("Senha administrativa", type="password")
+        entrar = st.form_submit_button("Entrar", use_container_width=True)
+    if entrar:
+        senha_configurada = st.secrets.get("ADMIN_PASSWORD")
+        if not senha_configurada:
+            st.error("A chave ADMIN_PASSWORD não está definida nos secrets do Streamlit.")
+        elif hmac.compare_digest(senha_admin, str(senha_configurada)):
+            st.session_state.admin_authenticated = True
+            st.session_state.admin_access_requested = False
+            st.rerun()
+        else:
+            st.error("Senha administrativa incorreta.")
+    if st.button("Voltar ao cadastro público"):
+        st.session_state.admin_access_requested = False
         st.rerun()
     st.stop()
 
 # --- Funções Auxiliares de Log ---
 def registrar_log(acao, resumo):
     supabase.table("logs").insert({
-        "usuario_email": st.session_state.user.email,
+        "usuario_email": "Administrador",
         "acao": acao,
         "resumo": resumo
     }).execute()
@@ -425,32 +389,36 @@ def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidad
     return buffer.getvalue()
 
 
-# --- Configuração Dinâmica de Menus baseada no Cargo ---
-opcoes_menu = []
-if st.session_state.user_role in ["Supervisor", "Master"]:
-    opcoes_menu.append("Cadastrar Equipamento")
-if st.session_state.user_role == "Master":
-    opcoes_menu.append("Editar Cadastro")
-if st.session_state.user_role in ["Supervisor", "Master"]:
-    opcoes_menu.append("Lista de Equipamentos")
-    opcoes_menu.append("Baixas")
-if st.session_state.user_role == "Master":
-    opcoes_menu.append("Relatórios")
-    opcoes_menu.append("Log de Atividades")
+# --- Menu da área administrativa ---
+if st.session_state.admin_authenticated:
+    opcoes_menu = [
+        "Cadastrar Equipamento",
+        "Editar Cadastro",
+        "Lista de Equipamentos",
+        "Baixas",
+        "Relatórios",
+        "Log de Atividades",
+    ]
 
-# --- Menu Lateral ---
-st.sidebar.title("Menu")
-st.sidebar.info(f"Usuário: {st.session_state.user.email}\n\nCargo: {st.session_state.user_role}")
-menu = st.sidebar.radio("Navegação", opcoes_menu)
+    st.sidebar.title("Área administrativa")
+    st.sidebar.info("Acesso autorizado por senha administrativa.")
+    menu = st.sidebar.radio("Navegação", opcoes_menu)
 
-if st.sidebar.button("Sair do Sistema"):
-    st.session_state.user = None
-    st.session_state.user_role = None
-    st.rerun()
+    if st.sidebar.button("Voltar ao cadastro público"):
+        st.session_state.admin_authenticated = False
+        st.rerun()
 
-# --- 1. CADASTRAR EQUIPAMENTO (Supervisor e Master) ---
+    if st.sidebar.button("Sair do Sistema"):
+        st.session_state.admin_authenticated = False
+        st.rerun()
+else:
+    menu = "Cadastrar Equipamento"
+
+# --- 1. CADASTRAR EQUIPAMENTO ---
 if menu == "Cadastrar Equipamento":
-    st.header("Cadastrar Novo Equipamento")
+    st.header("Cadastro de Equipamentos")
+    if not st.session_state.admin_authenticated:
+        st.caption("Cadastre um equipamento sem precisar criar uma conta ou fazer login.")
     
     with st.form("cadastro_equipamento_form"):
         tipo = st.selectbox("Tipo de Equipamento (Obrigatório)*", ["", "Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"])
@@ -511,20 +479,25 @@ if menu == "Cadastrar Equipamento":
                             "descricao": descricao if descricao else None,
                             "fotos": urls_fotos,
                             "status": "Ativo",
-                            "criado_por": st.session_state.user.email,
+                            "criado_por": (
+                                "Administrador"
+                                if st.session_state.admin_authenticated
+                                else "Acesso público"
+                            ),
                             "data_registro": str(date.today())
                         }).execute()
                         
-                        log_msg = f'O usuário: "{st.session_state.user.email}" cadastrou o equipamento: "{tipo}", "Código": {codigo}, "Service Tag": {service_tag}, "Colaborador": "{colaborador.strip()}"'
-                        registrar_log("Inserir", log_msg)
+                        if st.session_state.admin_authenticated:
+                            log_msg = f'O administrador cadastrou o equipamento: "{tipo}", "Código": {codigo}, "Service Tag": {service_tag}, "Colaborador": "{colaborador.strip()}"'
+                            registrar_log("Inserir", log_msg)
                         
                         st.success(f"Equipamento {codigo} (ST: {service_tag}) cadastrado com sucesso!")
                         import time
                         time.sleep(2)
                         st.rerun()
 
-# --- 2. EDITAR CADASTRO (Apenas Master) ---
-elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
+# --- 2. EDITAR CADASTRO ---
+elif menu == "Editar Cadastro":
     st.header("Editar / Remover Cadastro de Equipamento")
     
     res_busca = supabase.table("equipamentos").select("*").execute()
@@ -663,7 +636,7 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                                 "fotos": urls_finais
                             }).eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
                             
-                            registrar_log("Atualizar", f'O usuário "{st.session_state.user.email}" alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).')
+                            registrar_log("Atualizar", f'O administrador alterou dados do equipamento {equip_selecionado["codigo_controle"]} (Novo código: {ed_codigo.strip()}).')
                             st.success("Cadastro atualizado com sucesso!")
                             st.rerun()
                         except Exception as e:
@@ -671,11 +644,11 @@ elif menu == "Editar Cadastro" and st.session_state.user_role == "Master":
                             
             if btn_deletar:
                 supabase.table("equipamentos").delete().eq("codigo_controle", equip_selecionado['codigo_controle']).execute()
-                registrar_log("Deletar", f'O usuário "{st.session_state.user.email}" deletou o equipamento {equip_selecionado["codigo_controle"]}.')
+                registrar_log("Deletar", f'O administrador deletou o equipamento {equip_selecionado["codigo_controle"]}.')
                 st.success("Equipamento removido do banco de dados!")
                 st.rerun()
 
-# --- 3. LISTA DE EQUIPAMENTOS (Supervisor e Master) ---
+# --- 3. LISTA DE EQUIPAMENTOS ---
 elif menu == "Lista de Equipamentos":
     st.header("Lista Geral de Equipamentos")
     res_equip = supabase.table("equipamentos").select("*").order("data_registro", desc=False).execute()
@@ -864,7 +837,7 @@ elif menu == "Lista de Equipamentos":
         st.info("Nenhum equipamento cadastrado ate o momento.")
 
 # --- 4. MENU: BAIXAS (Supervisor e Master) ---
-elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]:
+elif menu == "Baixas":
     st.header("Gerenciamento de Baixas de Equipamentos")
     
     tab_listar, tab_nova = st.tabs(["Pesquisar Baixas", "➕ Nova Baixa"])
@@ -962,26 +935,19 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                 st.markdown(f"**Status:** {status_atual_equip}")
                                 
                                 # SÓ MOSTRA O BOTÃO SE FOR MASTER
-                                if st.session_state.user_role == "Master":
-                                    st.markdown("---")
-                                    if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
-                                        with st.spinner("Reativando equipamento e removendo da lista..."):
-                                            try:
-                                                # 1. Altera o equipamento correspondente de volta para "Ativo"
-                                                supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
-                                                
-                                                # 2. Arquiva esta baixa específica para histórico de relatórios
-                                                supabase.table("baixas").update({"arquivado": True}).eq("id", id_baixa).execute()
-                                                
-                                                # 3. Registra a reativação no Log do sistema
-                                                registrar_log("Reativação", f'O usuário Master "{st.session_state.user.email}" finalizou e ocultou a baixa do equipamento ST: {st_atual}.')
-                                                
-                                                st.success(f"Equipamento {st_atual} reativado e removido do painel!")
-                                                import time
-                                                time.sleep(1)
-                                                st.rerun() # Recarrega a página instantaneamente
-                                            except Exception as e:
-                                                st.error(f"Erro ao reativar equipamento: {e}")
+                                st.markdown("---")
+                                if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
+                                    with st.spinner("Reativando equipamento e removendo da lista..."):
+                                        try:
+                                            supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
+                                            supabase.table("baixas").update({"arquivado": True}).eq("id", id_baixa).execute()
+                                            registrar_log("Reativação", f'O administrador finalizou e ocultou a baixa do equipamento ST: {st_atual}.')
+                                            st.success(f"Equipamento {st_atual} reativado e removido do painel!")
+                                            import time
+                                            time.sleep(1)
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao reativar equipamento: {e}")
                             else:
                                 st.caption("Equipamento não localizado no banco.")
                 
@@ -1060,13 +1026,13 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                         "motivo": motivo,
                                         "observacao": observacao if observacao else None,
                                         "fotos": urls_fotos_baixa,
-                                        "criado_por": st.session_state.user.email,
+                                        "criado_por": "Administrador",
                                         "arquivado": False
                                     }).execute()
                                     
                                     # Altera para Inativo
                                     supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
-                                    registrar_log("Baixa", f'O usuário "{st.session_state.user.email}" deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
+                                    registrar_log("Baixa", f'O administrador deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.')
                                     
                                     st.success(f"Baixa efetuada e equipamento (ST: {st_selecionada}) definido como Inativo com sucesso!")
                                     import time
@@ -1075,8 +1041,8 @@ elif menu == "Baixas" and st.session_state.user_role in ["Supervisor", "Master"]
                                 except Exception as e:
                                     st.error(f"Erro ao processar a requisição no banco de dados: {e}")
 
-# --- 5. RELATÓRIOS (Apenas Master) ---
-elif menu == "Relatórios" and st.session_state.user_role == "Master":
+# --- 5. RELATÓRIOS ---
+elif menu == "Relatórios":
     st.header("Central de Relatórios de Equipamentos")
     
     op_relatorio = st.selectbox("Selecione o tipo de relatório desejado:", [
@@ -1408,8 +1374,8 @@ elif menu == "Relatórios" and st.session_state.user_role == "Master":
                 st.download_button("📥 Baixar PDF", data=pdf_data, file_name=nome_arquivo, mime="application/pdf")
 
 
-# --- 6. LOG DE ATIVIDADES (Apenas Master) ---
-elif menu == "Log de Atividades" and st.session_state.user_role == "Master":
+# --- 6. LOG DE ATIVIDADES ---
+elif menu == "Log de Atividades":
     st.header("Log de Atividades do Sistema")
     st.caption("Exibe todas as inserções, atualizações e exclusões em tempo real.")
     
@@ -1429,3 +1395,11 @@ elif menu == "Log de Atividades" and st.session_state.user_role == "Master":
         st.table(df_logs)
     else:
         st.info("Nenhuma atividade registrada nos logs.")
+
+
+# --- Acesso à área administrativa no rodapé ---
+st.markdown("---")
+if not st.session_state.admin_authenticated:
+    if st.button("Acessar área admin"):
+        st.session_state.admin_access_requested = True
+        st.rerun()
