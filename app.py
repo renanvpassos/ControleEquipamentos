@@ -638,7 +638,7 @@ if menu == "Cadastrar Equipamento":
                 service_tag = st.text_input(
                     "Etiqueta Patrimônio Mult (se tiver)",
                     key=f"{cadastro_prefixo}_tag_{chave}",
-                    placeholder="Ex.: ABC1234",
+                    placeholder="Ex.: 001234",
                 )
         with col_lixeira:
             st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
