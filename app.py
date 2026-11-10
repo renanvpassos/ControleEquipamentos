@@ -487,7 +487,22 @@ else:
 
 # --- 1. CADASTRAR EQUIPAMENTO ---
 if menu == "Cadastrar Equipamento":
-    st.header("Cadastro de Equipamentos")
+    st.markdown(
+        """
+        <style>
+        .stMainBlockContainer {
+            max-width: 1100px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<h2 style='text-align: center;'>Cadastro de Equipamentos</h2>",
+        unsafe_allow_html=True,
+    )
     if not st.session_state.admin_authenticated:
         st.caption("Cadastre um equipamento sem precisar criar uma conta ou fazer login.")
 
