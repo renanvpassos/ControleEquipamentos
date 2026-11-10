@@ -284,7 +284,7 @@ if st.session_state.admin_access_requested and not st.session_state.admin_authen
 def registrar_log(acao, resumo, colaborador):
     try:
         supabase.table("logs_sistema").insert({
-            "usuario_email": colaborador,
+            "colaborador": colaborador,
             "acao": acao,
             "resumo": resumo
         }).execute()
@@ -1414,7 +1414,7 @@ elif menu == "Log de Atividades":
             df_logs = df_logs.sort_values("created_at", ascending=False)
         df_logs = df_logs.rename(columns={
             "created_at": "Data/Hora Evento",
-            "usuario_email": "Colaborador Responsável",
+            "colaborador": "Colaborador Responsável",
             "acao": "Operação",
             "resumo": "Histórico Detalhado"
         })
