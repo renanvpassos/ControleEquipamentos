@@ -466,7 +466,6 @@ if st.session_state.admin_authenticated:
         "Cadastrar Equipamento",
         "Editar Cadastro",
         "Lista de Equipamentos",
-        "Baixas",
         "Relatórios",
         "Log de Atividades",
     ]
@@ -533,9 +532,9 @@ if menu == "Cadastrar Equipamento":
             == "Estação de Trabalho"
         )
         if workstation:
-            col_tipo, col_lixeira = st.columns([8, 0.6])
+            col_tipo, col_foto, col_lixeira = st.columns([8, 1.2, 0.6])
         else:
-            col_tipo, col_marca, col_modelo, col_tag, col_lixeira = st.columns([2, 2, 2, 2, 0.6])
+            col_tipo, col_marca, col_modelo, col_tag, col_foto, col_lixeira = st.columns([2, 2, 2, 2, 1.2, 0.6])
         with col_tipo:
             tipo = st.selectbox(
                 "Tipo de equipamento*",
@@ -571,11 +570,21 @@ if menu == "Cadastrar Equipamento":
                     st.rerun()
                 else:
                     st.warning("O cadastro precisa ter pelo menos um equipamento.")
+        with col_foto:
+            st.write("")
+            foto = st.file_uploader(
+                "Foto do equipamento*",
+                type=["png", "jpg", "jpeg"],
+                key=f"{cadastro_prefixo}_foto_{chave}",
+                label_visibility="collapsed",
+                help="Anexe uma foto deste equipamento.",
+            )
         dados_itens.append({
             "tipo": tipo,
             "marca": marca,
             "modelo": modelo.strip(),
             "service_tag": service_tag.strip().upper() or None,
+            "foto": foto,
         })
 
     col_adicionar, _ = st.columns([1, 8])
@@ -584,13 +593,6 @@ if menu == "Cadastrar Equipamento":
             proxima_chave = str(max(int(item["chave"]) for item in itens_cadastro) + 1)
             st.session_state[itens_key] = itens_cadastro + [{"chave": proxima_chave}]
             st.rerun()
-
-    fotos = st.file_uploader(
-        "Fotos do cadastro (Obrigatório - Máx. 10 fotos)*",
-        type=["png", "jpg", "jpeg"],
-        accept_multiple_files=True,
-        key=f"{cadastro_prefixo}_fotos",
-    )
 
     if st.button("Salvar Cadastro", key=f"{cadastro_prefixo}_salvar"):
         codigo = None
@@ -604,11 +606,12 @@ if menu == "Cadastrar Equipamento":
             )
             for item in dados_itens
         )
+        fotos_invalidas = any(not item["foto"] for item in dados_itens)
 
-        if itens_invalidos or not colaborador.strip() or not fotos:
-            st.error("Preencha o tipo e a marca dos equipamentos aplicáveis, o colaborador e anexe pelo menos uma foto.")
-        elif len(fotos) > 10:
-            st.error("Permitido anexar no máximo 10 fotos.")
+        if itens_invalidos or not colaborador.strip():
+            st.error("Preencha o tipo e a marca dos equipamentos aplicáveis e o colaborador.")
+        elif fotos_invalidas:
+            st.error("Anexe uma foto para cada equipamento cadastrado.")
         elif tags_repetidas:
             st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
         else:
@@ -661,10 +664,13 @@ if menu == "Cadastrar Equipamento":
             elif codigo is not None:
                 urls_fotos = []
                 erro_upload = False
-                with st.spinner("Enviando fotos para o servidor..."):
-                    for idx, foto in enumerate(fotos):
-                        extensao = foto.name.split(".")[-1]
-                        caminho_storage = f"{codigo}/{codigo}_{idx}_{int(datetime.now().timestamp())}.{extensao}"
+                with st.spinner("Enviando fotos dos equipamentos para o servidor..."):
+                    for idx, item in enumerate(dados_itens):
+                        foto = item["foto"]
+                        extensao = foto.name.split(".")[-1].lower()
+                        codigo_equipamento = codigos[idx]
+                        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                        caminho_storage = f"{codigo_equipamento}/{codigo_equipamento}_{timestamp}.{extensao}"
                         try:
                             supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
                             urls_fotos.append(
@@ -685,7 +691,7 @@ if menu == "Cadastrar Equipamento":
                             "modelo": item["modelo"] or None,
                             "colaborador": colaborador.strip(),
                             "descricao": descricao.strip() or None,
-                            "fotos": urls_fotos,
+                            "fotos": [urls_fotos[indice]],
                             "status": "Ativo",
                             "criado_por": (
                                 "Administrador"
@@ -870,9 +876,9 @@ elif menu == "Editar Cadastro":
             tipo_key = f"{itens_key}_tipo_{chave}"
             tipo_atual = st.session_state.get(tipo_key, item.get("tipo") or "")
             if tipo_atual == "Estação de Trabalho":
-                col_tipo, col_status, col_lixeira = st.columns([5, 1.3, 0.6])
+                col_tipo, col_status, col_foto, col_lixeira = st.columns([5, 1.3, 1.2, 0.6])
             else:
-                col_tipo, col_marca, col_modelo, col_tag, col_status, col_lixeira = st.columns([1.7, 1.7, 1.7, 1.7, 1.3, 0.6])
+                col_tipo, col_marca, col_modelo, col_tag, col_status, col_foto, col_lixeira = st.columns([1.7, 1.7, 1.7, 1.7, 1.3, 1.2, 0.6])
             with col_tipo:
                 tipo = st.selectbox(
                     "Tipo*",
@@ -918,6 +924,15 @@ elif menu == "Editar Cadastro":
                     index=status_opcoes.index(status_atual),
                     key=f"{itens_key}_status_{chave}",
                 )
+            with col_foto:
+                st.write("")
+                foto_nova = st.file_uploader(
+                    "Foto do equipamento*",
+                    type=["png", "jpg", "jpeg"],
+                    key=f"{itens_key}_foto_{chave}",
+                    label_visibility="collapsed",
+                    help="Envie uma nova foto para este equipamento.",
+                )
             with col_lixeira:
                 st.write("")
                 if st.button("🗑️", key=f"{itens_key}_remover_{chave}", help="Remover este equipamento"):
@@ -937,6 +952,9 @@ elif menu == "Editar Cadastro":
                 "modelo": modelo.strip(),
                 "service_tag": service_tag.strip().upper() or None,
                 "status": status,
+                "fotos": obter_lista_fotos(item.get("fotos")),
+                "foto_nova": foto_nova,
+                "tipo_original": item.get("tipo") or "",
             })
 
         if st.button("➕ Adicionar equipamento", key=f"{itens_key}_adicionar"):
@@ -951,37 +969,31 @@ elif menu == "Editar Cadastro":
                 "modelo": "",
                 "service_tag": None,
                 "status": "Ativo",
+                "fotos": [],
             }]
             st.rerun()
 
-        fotos_por_grupo = []
-        for item in equip_selecionado:
-            for foto in obter_lista_fotos(item.get("fotos")):
-                if foto not in fotos_por_grupo:
-                    fotos_por_grupo.append(foto)
-        st.write("**Fotos salvas atualmente:**")
-        fotos_para_manter = []
-        if fotos_por_grupo:
-            cols = st.columns(10)
-            for i, url_f in enumerate(fotos_por_grupo):
-                with cols[i % 10]:
-                    try:
-                        caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
-                        bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
-                        st.image(bytes_foto, use_container_width=True)
-                    except Exception:
-                        st.caption("⚠️ Erro")
-                    if st.checkbox("Manter", value=True, key=f"{itens_key}_foto_{i}"):
-                        fotos_para_manter.append(url_f)
-        else:
+        st.write("**Fotos salvas por equipamento:**")
+        fotos_existentes = False
+        for item in itens_edicao:
+            fotos_item = obter_lista_fotos(item.get("fotos"))
+            if fotos_item:
+                fotos_existentes = True
+                st.caption(
+                    f"{item.get('tipo') or 'Equipamento'}"
+                    f" — Etiqueta: {item.get('service_tag') or '-'}"
+                )
+                cols = st.columns(min(len(fotos_item), 10))
+                for i, url_f in enumerate(fotos_item):
+                    with cols[i % len(cols)]:
+                        try:
+                            caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
+                            bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
+                            st.image(bytes_foto, use_container_width=True)
+                        except Exception as e:
+                            st.warning(f"Não foi possível carregar a foto {url_f}: {e}")
+        if not fotos_existentes:
             st.caption("Nenhuma foto cadastrada.")
-
-        novas_fotos = st.file_uploader(
-            "Adicionar Novas Fotos (Máx. 10 no cadastro)",
-            type=["png", "jpg", "jpeg"],
-            accept_multiple_files=True,
-            key=f"{itens_key}_novas_fotos",
-        )
         col_salvar, col_deletar = st.columns(2)
         with col_salvar:
             btn_salvar = st.button("Atualizar Cadastro", key=f"{itens_key}_salvar")
@@ -997,6 +1009,14 @@ elif menu == "Editar Cadastro":
                 or (
                     item["tipo"] != "Estação de Trabalho"
                     and not item["marca"]
+                )
+                for item in dados_itens_edicao
+            )
+            fotos_invalidas = any(
+                not item["foto_nova"]
+                and (
+                    not item["fotos"]
+                    or item["tipo"] != item["tipo_original"]
                 )
                 for item in dados_itens_edicao
             )
@@ -1032,6 +1052,8 @@ elif menu == "Editar Cadastro":
                 st.error("O cadastro precisa ter pelo menos um equipamento.")
             elif itens_invalidos:
                 st.error("Selecione o tipo e a marca dos equipamentos aplicáveis.")
+            elif fotos_invalidas:
+                st.error("Anexe uma foto para cada equipamento sem imagem ou cujo tipo foi alterado.")
             elif tags_repetidas:
                 st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
             elif tags_existentes:
@@ -1039,25 +1061,26 @@ elif menu == "Editar Cadastro":
             elif codigo_duplicado:
                 st.error(f"Já existe outro cadastro com o código {codigo_novo}.")
             else:
-                urls_finais = list(fotos_para_manter)
+                fotos_por_item = {}
                 erro_upload = False
-                if novas_fotos:
-                    if len(urls_finais) + len(novas_fotos) > 10:
-                        st.error("A soma das fotos salvas com as novas excede o limite máximo de 10.")
-                        erro_upload = True
-                    else:
-                        for idx, foto in enumerate(novas_fotos):
-                            extensao = foto.name.split(".")[-1]
-                            caminho_storage = f"{codigo_novo}/{codigo_novo}_edit_{idx}_{int(datetime.now().timestamp())}.{extensao}"
-                            try:
-                                supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                                urls_finais.append(
-                                    supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                                )
-                            except Exception as e:
-                                st.error(f"Erro ao subir foto complementar: {e}")
-                                erro_upload = True
-                                break
+                with st.spinner("Enviando fotos dos equipamentos para o servidor..."):
+                    for idx, item in enumerate(dados_itens_edicao):
+                        foto = item["foto_nova"]
+                        if foto is None:
+                            fotos_por_item[item["chave_ui"]] = item["fotos"]
+                            continue
+                        extensao = foto.name.split(".")[-1].lower()
+                        timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
+                        caminho_storage = f"{codigo_novo}/{codigo_novo}_equip_{idx}_{timestamp}.{extensao}"
+                        try:
+                            supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
+                            fotos_por_item[item["chave_ui"]] = [
+                                supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
+                            ]
+                        except Exception as e:
+                            st.error(f"Erro ao enviar a foto do equipamento {item['tipo']}: {e}")
+                            erro_upload = True
+                            break
 
                 if not erro_upload:
                     try:
@@ -1076,7 +1099,7 @@ elif menu == "Editar Cadastro":
                                 "colaborador": ed_colab.strip(),
                                 "descricao": ed_desc.strip() or None,
                                 "status": item["status"],
-                                "fotos": urls_finais,
+                                "fotos": fotos_por_item[item["chave_ui"]],
                             }
                             if item["id"] is None:
                                 registro.update({
@@ -1285,27 +1308,6 @@ elif menu == "Lista de Equipamentos":
                                     st.markdown("<div style='opacity: 0.55; filter: grayscale(20%);'>", unsafe_allow_html=True)
                                 
                                 codigo_card = f"cadastro_{inicio + i + deslocamento}"
-                                fotos = []
-                                for registro in itens_grupo:
-                                    for foto in obter_lista_fotos(registro.get("fotos")):
-                                        if foto not in fotos:
-                                            fotos.append(foto)
-
-                                caminhos_fotos = []
-                                for foto in fotos:
-                                    caminho_foto = obter_caminho_bucket(foto)
-                                    if caminho_foto:
-                                        caminhos_fotos.append(caminho_foto)
-
-                                if caminhos_fotos:
-                                    try:
-                                        mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
-                                        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                                    except Exception:
-                                        st.warning("Foto encontrada, mas nao foi possivel carregar.")
-                                else:
-                                    st.info("Sem foto cadastrada")
-
                                 nome_colaborador = next(
                                     (
                                         str(registro.get("colaborador")).strip()
@@ -1325,6 +1327,22 @@ elif menu == "Lista de Equipamentos":
                                 st.markdown(f"**Código(s) do cadastro:** {', '.join(codigos) or '-'}")
                                 for indice_equipamento, registro in enumerate(itens_grupo, start=1):
                                     st.markdown(f"**Equipamento {indice_equipamento}**")
+                                    caminhos_fotos = []
+                                    for foto in obter_lista_fotos(registro.get("fotos")):
+                                        caminho_foto = obter_caminho_bucket(foto)
+                                        if caminho_foto:
+                                            caminhos_fotos.append(caminho_foto)
+                                    if caminhos_fotos:
+                                        try:
+                                            mostrar_carrossel_fotos(
+                                                caminhos_fotos,
+                                                f"{codigo_card}_equip_{indice_equipamento}",
+                                            )
+                                            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                                        except Exception as e:
+                                            st.warning(f"Foto do equipamento encontrada, mas não foi possível carregar: {e}")
+                                    else:
+                                        st.info("Sem foto cadastrada para este equipamento.")
                                     st.markdown(
                                         f"**Tipo:** {registro.get('tipo') or '-'}  \n"
                                         f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
