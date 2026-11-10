@@ -1403,10 +1403,16 @@ elif menu == "Log de Atividades":
     st.header("Log de Atividades do Sistema")
     st.caption("Exibe todas as inserções, atualizações e exclusões em tempo real.")
     
-    logs = supabase.table("logs").select("*").order("created_at", desc=True).execute()
+    try:
+        logs = supabase.table("logs").select("*").execute()
+    except APIError as e:
+        st.error(f"Erro ao consultar a tabela `logs` no Supabase: {e}")
+        st.stop()
     
     if logs.data:
         df_logs = pd.DataFrame(logs.data)
+        if "created_at" in df_logs.columns:
+            df_logs = df_logs.sort_values("created_at", ascending=False)
         df_logs = df_logs.rename(columns={
             "created_at": "Data/Hora Evento",
             "usuario_email": "Colaborador Responsável",
