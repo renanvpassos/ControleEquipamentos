@@ -18,7 +18,7 @@ from postgrest.exceptions import APIError
 BUCKET_FOTOS = "equipamentos-fotos"
 TIPOS_EQUIPAMENTO = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
 TIPOS_EQUIPAMENTO_OBRIGATORIOS = ["Monitor", "Computador", "Estação de Trabalho"]
-MARCAS_EQUIPAMENTO = ["Dell", "HP", "Positivo", "Microsoft", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"]
+MARCAS_EQUIPAMENTO = ["Dell", "HP", "Positivo", "Microsoft", "Multilaser", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"]
 MARCA_NAO_APLICAVEL = "Não se aplica"
 
 
