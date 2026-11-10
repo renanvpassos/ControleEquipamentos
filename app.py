@@ -510,7 +510,7 @@ if menu == "Cadastrar Equipamento":
             with col_modelo:
                 modelo = st.text_input("Modelo", key=f"{cadastro_prefixo}_modelo_{chave}")
             with col_tag:
-                service_tag = st.text_input("Service Tag (opcional)", key=f"{cadastro_prefixo}_tag_{chave}")
+                service_tag = st.text_input("Etiqueta Patrimônio Mult (se tiver)", key=f"{cadastro_prefixo}_tag_{chave}")
         with col_lixeira:
             st.write("")
             if st.button("🗑️", key=f"{cadastro_prefixo}_remover_{chave}", help="Remover este equipamento"):
@@ -561,7 +561,7 @@ if menu == "Cadastrar Equipamento":
         elif len(fotos) > 10:
             st.error("Permitido anexar no máximo 10 fotos.")
         elif tags_repetidas:
-            st.error("Não é permitido repetir a Service Tag no mesmo cadastro.")
+            st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
         else:
             try:
                 codigos = gerar_proximos_codigos_controle(len(dados_itens))
@@ -585,7 +585,7 @@ if menu == "Cadastrar Equipamento":
                     for item in check_tags.data
                     if item.get("service_tag")
                 }
-                st.error(f"Já existe equipamento cadastrado com a Service Tag: {', '.join(sorted(tags_existentes))}.")
+                st.error(f"Já existe equipamento cadastrado com a Etiqueta Patrimônio Mult: {', '.join(sorted(tags_existentes))}.")
             elif codigo is not None:
                 urls_fotos = []
                 erro_upload = False
@@ -688,7 +688,7 @@ elif menu == "Editar Cadastro":
         }
 
         if metodo_busca == "Por busca textual":
-            busca_ref = st.text_input("Buscar cadastro (Código, Service Tag, tipo, marca, modelo ou colaborador):")
+            busca_ref = st.text_input("Buscar cadastro (Código, Etiqueta Patrimônio Mult, tipo, marca, modelo ou colaborador):")
             if busca_ref:
                 ref_lower = busca_ref.lower()
                 codigos_encontrados = {
@@ -831,7 +831,7 @@ elif menu == "Editar Cadastro":
                     )
                 with col_tag:
                     service_tag = st.text_input(
-                        "Service Tag",
+                        "Etiqueta Patrimônio Mult",
                         value=item.get("service_tag") or "",
                         key=f"{itens_key}_tag_{chave}",
                     )
@@ -961,9 +961,9 @@ elif menu == "Editar Cadastro":
             elif itens_invalidos:
                 st.error("Selecione o tipo e a marca dos equipamentos aplicáveis.")
             elif tags_repetidas:
-                st.error("Não é permitido repetir a Service Tag no mesmo cadastro.")
+                st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
             elif tags_existentes:
-                st.error(f"Já existe equipamento cadastrado com a Service Tag: {', '.join(sorted(tags_existentes))}.")
+                st.error(f"Já existe equipamento cadastrado com a Etiqueta Patrimônio Mult: {', '.join(sorted(tags_existentes))}.")
             elif codigo_duplicado:
                 st.error(f"Já existe outro cadastro com o código {codigo_novo}.")
             else:
@@ -1229,7 +1229,7 @@ elif menu == "Lista de Equipamentos":
                                     st.markdown(
                                         f"**Tipo:** {registro.get('tipo') or '-'}  \n"
                                         f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
-                                        f"**Service Tag:** {registro.get('service_tag') or '-'}"
+                                        f"**Etiqueta Patrimônio Mult:** {registro.get('service_tag') or '-'}"
                                     )
                                     status_atual = registro.get("status") or "-"
                                     if str(status_atual).lower() == "inativo":
@@ -1276,7 +1276,7 @@ elif menu == "Baixas":
     tab_listar, tab_nova = st.tabs(["Pesquisar Baixas", "➕ Nova Baixa"])
     
     with tab_listar:
-        pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Service Tag ou Motivo):")
+        pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Etiqueta Patrimônio Mult ou Motivo):")
         
         # 1. Filtra trazendo apenas as baixas que NÃO foram arquivadas historicamente
         res_baixas = supabase.table("baixas").select("*").eq("arquivado", False).order("data_baixa", desc=True).execute()
@@ -1285,7 +1285,7 @@ elif menu == "Baixas":
             df_baixas = pd.DataFrame(res_baixas.data)
             
             # -----------------------------------------------------------------
-            # SOLUÇÃO PARA DUPLICADOS: Mantém apenas a baixa mais recente de cada Service Tag
+            # SOLUÇÃO PARA DUPLICADOS: Mantém apenas a baixa mais recente de cada Etiqueta Patrimônio Mult
             # -----------------------------------------------------------------
             df_baixas = df_baixas.drop_duplicates(subset=["service_tag"], keep="first")
             
@@ -1413,7 +1413,7 @@ elif menu == "Baixas":
                     dict_equips[str(st_val).strip().upper()] = item
                     
             opcoes_st = ["Selecione..."] + sorted(list(dict_equips.keys()))
-            st_selecionada = st.selectbox("Selecione a Service Tag (Obrigatório)*", options=opcoes_st)
+            st_selecionada = st.selectbox("Selecione a Etiqueta Patrimônio Mult (Obrigatório)*", options=opcoes_st)
             
             if st_selecionada != "Selecione...":
                 dados_prev = dict_equips[st_selecionada]
@@ -1603,7 +1603,7 @@ elif menu == "Relatórios":
         lista_tags = list(set([item['service_tag'] for item in res_eq.data if item.get('service_tag')])) if res_eq.data else []
         lista_tags = sorted(lista_tags)
         
-        st_selecionada = st.selectbox("Selecione a Service Tag do Equipamento:", lista_tags)
+        st_selecionada = st.selectbox("Selecione a Etiqueta Patrimônio Mult do Equipamento:", lista_tags)
         
         col_d1, col_d2 = st.columns(2)
         with col_d1:
@@ -1640,7 +1640,7 @@ elif menu == "Relatórios":
             with col_e1:
                 st.markdown("**🏆 Equipamentos com mais registros de Baixa:**")
                 top_equipamentos = df_estatisticas["service_tag"].value_counts().reset_index()
-                top_equipamentos.columns = ["Service Tag", "Quantidade de Baixas"]
+                top_equipamentos.columns = ["Etiqueta Patrimônio Mult", "Quantidade de Baixas"]
                 st.dataframe(top_equipamentos.head(5), use_container_width=True, hide_index=True)
                 
             with col_e2:
@@ -1729,7 +1729,7 @@ elif menu == "Relatórios":
             )
             
             df_inativos_lista = df_com_colab[df_com_colab["Status"] == "Inativo"][['colaborador', 'tipo', 'service_tag']].rename(
-                columns={'colaborador': 'Colaborador', 'tipo': 'Tipo Equipamento', 'service_tag': 'Service Tag'}
+                columns={'colaborador': 'Colaborador', 'tipo': 'Tipo Equipamento', 'service_tag': 'Etiqueta Patrimônio Mult'}
             )
             
             # --- RENDERIZAÇÃO NA TELA ---
