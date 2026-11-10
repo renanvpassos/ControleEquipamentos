@@ -12,6 +12,7 @@ import json
 import base64
 import hmac
 import streamlit.components.v1 as components
+from postgrest.exceptions import APIError
 
 BUCKET_FOTOS = "equipamentos-fotos"
 
@@ -281,11 +282,18 @@ if st.session_state.admin_access_requested and not st.session_state.admin_authen
 
 # --- Funções Auxiliares de Log ---
 def registrar_log(acao, resumo):
-    supabase.table("logs").insert({
-        "usuario_email": "Administrador",
-        "acao": acao,
-        "resumo": resumo
-    }).execute()
+    try:
+        supabase.table("logs").insert({
+            "usuario_email": "Administrador",
+            "acao": acao,
+            "resumo": resumo
+        }).execute()
+    except APIError:
+        st.warning(
+            "A operação foi concluída, mas não foi possível registrar a atividade. "
+            "Verifique as colunas da tabela `logs` (`usuario_email`, `acao` e "
+            "`resumo`) e as políticas de INSERT (RLS) no Supabase."
+        )
 
 # --- Funções de Geração de Arquivos (PDF e Excel) ---
 def gerar_excel(df):
