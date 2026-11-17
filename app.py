@@ -997,6 +997,11 @@ elif menu == "Lista de Equipamentos":
                         zip(cols, df_pagina[i:i + 4])
                     ):
                         with col:
+                            itens_grupo = sorted(
+                                itens_grupo,
+                                key=lambda registro: registro.get("tipo")
+                                != "Estação de Trabalho",
+                            )
                             status_grupo = [str(registro.get("status") or "-") for registro in itens_grupo]
                             is_inativo = all(status.lower() == "inativo" for status in status_grupo)
                             
@@ -1023,43 +1028,63 @@ elif menu == "Lista de Equipamentos":
                                 ))
                                 st.markdown(f"**Colaborador:** {nome_colaborador}")
                                 st.markdown(f"**Código(s) do cadastro:** {', '.join(codigos) or '-'}")
-                                for indice_equipamento, registro in enumerate(itens_grupo, start=1):
-                                    st.markdown(f"**Equipamento {indice_equipamento}**")
-                                    caminhos_fotos = []
-                                    for foto in obter_lista_fotos(registro.get("fotos")):
-                                        caminho_foto = obter_caminho_bucket(foto)
-                                        if caminho_foto:
-                                            caminhos_fotos.append(caminho_foto)
-                                    if caminhos_fotos:
-                                        try:
-                                            mostrar_carrossel_fotos(
-                                                caminhos_fotos,
-                                                f"{codigo_card}_equip_{indice_equipamento}",
-                                            )
-                                            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                                        except Exception as e:
-                                            st.warning(f"Foto do equipamento encontrada, mas não foi possível carregar: {e}")
-                                    else:
-                                        st.info("Sem foto cadastrada para este equipamento.")
-                                    st.markdown(
-                                        f"**Tipo:** {registro.get('tipo') or '-'}  \n"
-                                        f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
-                                        f"**Etiqueta Patrimônio Mult:** {registro.get('service_tag') or '-'}  \n"
-                                        f"**Data do cadastro:** {registro.get('data_registro') or '-'}  \n"
-                                        f"**Cadastrado por:** {registro.get('criado_por') or '-'}"
-                                    )
-                                    status_atual = registro.get("status") or "-"
-                                    if str(status_atual).lower() == "inativo":
-                                        st.markdown(
-                                            f"**Status:** <span style='color:red; font-weight:bold;'>{status_atual}</span>",
-                                            unsafe_allow_html=True,
-                                        )
-                                    else:
-                                        st.markdown(f"**Status:** {status_atual}")
+                                primeiro_equipamento = itens_grupo[0]
+                                st.markdown(
+                                    f"**Equipamento 1: {primeiro_equipamento.get('tipo') or '-'}**  \n"
+                                    f"**Marca/Modelo:** {primeiro_equipamento.get('marca') or '-'} / "
+                                    f"{primeiro_equipamento.get('modelo') or '-'}  \n"
+                                    f"**Etiqueta Patrimônio Mult:** "
+                                    f"{primeiro_equipamento.get('service_tag') or '-'}"
+                                )
 
-                                    descricao = registro.get("descricao")
-                                    if descricao and str(descricao).strip() not in ["", "None", "nan"]:
-                                        st.markdown(f"**Descrição:** {descricao}")
+                                expandido_key = f"card_expandido_{codigo_card}"
+                                expandido = st.session_state.get(expandido_key, False)
+                                if st.button(
+                                    "Recolher" if expandido else "Ver equipamentos e fotos",
+                                    key=f"btn_{expandido_key}",
+                                    use_container_width=True,
+                                ):
+                                    st.session_state[expandido_key] = not expandido
+                                    st.rerun()
+
+                                if expandido:
+                                    for indice_equipamento, registro in enumerate(itens_grupo, start=1):
+                                        st.markdown(f"**Equipamento {indice_equipamento}**")
+                                        caminhos_fotos = []
+                                        for foto in obter_lista_fotos(registro.get("fotos")):
+                                            caminho_foto = obter_caminho_bucket(foto)
+                                            if caminho_foto:
+                                                caminhos_fotos.append(caminho_foto)
+                                        if caminhos_fotos:
+                                            try:
+                                                mostrar_carrossel_fotos(
+                                                    caminhos_fotos,
+                                                    f"{codigo_card}_equip_{indice_equipamento}",
+                                                )
+                                                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+                                            except Exception as e:
+                                                st.warning(f"Foto do equipamento encontrada, mas não foi possível carregar: {e}")
+                                        else:
+                                            st.info("Sem foto cadastrada para este equipamento.")
+                                        st.markdown(
+                                            f"**Tipo:** {registro.get('tipo') or '-'}  \n"
+                                            f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
+                                            f"**Etiqueta Patrimônio Mult:** {registro.get('service_tag') or '-'}  \n"
+                                            f"**Data do cadastro:** {registro.get('data_registro') or '-'}  \n"
+                                            f"**Cadastrado por:** {registro.get('criado_por') or '-'}"
+                                        )
+                                        status_atual = registro.get("status") or "-"
+                                        if str(status_atual).lower() == "inativo":
+                                            st.markdown(
+                                                f"**Status:** <span style='color:red; font-weight:bold;'>{status_atual}</span>",
+                                                unsafe_allow_html=True,
+                                            )
+                                        else:
+                                            st.markdown(f"**Status:** {status_atual}")
+
+                                        descricao = registro.get("descricao")
+                                        if descricao and str(descricao).strip() not in ["", "None", "nan"]:
+                                            st.markdown(f"**Descrição:** {descricao}")
                                     
                                 if is_inativo:
                                     st.markdown("</div>", unsafe_allow_html=True)
