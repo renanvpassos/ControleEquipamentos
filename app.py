@@ -1106,9 +1106,6 @@ elif menu == "Editar Cadastro":
                 )
                 for item in dados_itens_edicao
             )
-            tipos_obrigatorios_faltantes = obter_tipos_obrigatorios_faltantes(
-                dados_itens_edicao
-            )
             fotos_invalidas = any(
                 not item["fotos_novas"]
                 and (
@@ -1149,11 +1146,6 @@ elif menu == "Editar Cadastro":
                 st.error("O cadastro precisa ter pelo menos um equipamento.")
             elif itens_invalidos:
                 st.error("Selecione o tipo e a marca dos equipamentos aplicáveis.")
-            elif tipos_obrigatorios_faltantes:
-                st.error(
-                    "O cadastro precisa incluir pelo menos um de cada equipamento obrigatório: "
-                    f"{', '.join(tipos_obrigatorios_faltantes)}."
-                )
             elif fotos_invalidas:
                 st.error("Anexe pelo menos uma foto para cada equipamento sem imagem ou cujo tipo foi alterado.")
             elif tags_repetidas:
