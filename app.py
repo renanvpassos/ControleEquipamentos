@@ -930,6 +930,13 @@ elif menu == "Editar Cadastro":
         equipamento_base = equip_selecionado[0]
         grupo_key = str(equipamento_base.get("id") or equipamento_base.get("codigo_controle"))
         itens_key = f"edicao_itens_{grupo_key}"
+        feedback_foto = st.session_state.pop(f"{itens_key}_feedback_foto", None)
+        if feedback_foto:
+            nivel_feedback, texto_feedback = feedback_foto
+            if nivel_feedback == "error":
+                st.error(texto_feedback)
+            else:
+                st.success(texto_feedback)
         ids_grupo = {item.get("id") for item in equip_selecionado if item.get("id") is not None}
         if itens_key not in st.session_state:
             st.session_state[itens_key] = [
@@ -1098,7 +1105,7 @@ elif menu == "Editar Cadastro":
                         try:
                             caminho_relative = url_f.split("equipamentos-fotos/")[-1] if "equipamentos-fotos/" in url_f else url_f
                             bytes_foto = supabase.storage.from_("equipamentos-fotos").download(caminho_relative)
-                            st.image(bytes_foto, use_container_width=True)
+                            st.image(bytes_foto, width=120)
                         except Exception as e:
                             st.warning(f"Não foi possível carregar a foto {url_f}: {e}")
                         if st.button(
@@ -1106,25 +1113,63 @@ elif menu == "Editar Cadastro":
                             key=f"{itens_key}_excluir_foto_{item['chave_ui']}_{i}",
                             help="Excluir esta foto do cadastro",
                         ):
-                            st.session_state[itens_key] = [
-                                {
-                                    **item_atual,
-                                    "fotos": [
-                                        foto
-                                        for indice_foto, foto in enumerate(
-                                            obter_lista_fotos(item_atual.get("fotos"))
-                                        )
-                                        if not (
-                                            item_atual["chave_ui"] == item["chave_ui"]
-                                            and indice_foto == i
-                                        )
-                                    ],
-                                }
-                                if item_atual["chave_ui"] == item["chave_ui"]
-                                else item_atual
-                                for item_atual in itens_edicao
+                            fotos_restantes = [
+                                foto
+                                for indice_foto, foto in enumerate(fotos_item)
+                                if indice_foto != i
                             ]
-                            st.rerun()
+                            try:
+                                supabase.table("equipamentos").update(
+                                    {"fotos": fotos_restantes}
+                                ).eq("id", item["id"]).execute()
+                            except Exception as e:
+                                st.error(f"Não foi possível remover a foto do cadastro: {e}")
+                            else:
+                                caminho_foto = obter_caminho_bucket(url_f)
+                                erro_storage = None
+                                if caminho_foto and url_f not in fotos_restantes:
+                                    try:
+                                        supabase.storage.from_(BUCKET_FOTOS).remove(
+                                            [caminho_foto]
+                                        )
+                                    except Exception as e:
+                                        erro_storage = e
+
+                                itens_atualizados = []
+                                for item_atual in itens_edicao:
+                                    if item_atual["chave_ui"] != item["chave_ui"]:
+                                        itens_atualizados.append(item_atual)
+                                        continue
+
+                                    fotos_originais = obter_lista_fotos(
+                                        item_atual.get(
+                                            "fotos_originais",
+                                            item_atual.get("fotos"),
+                                        )
+                                    )
+                                    if not erro_storage:
+                                        try:
+                                            fotos_originais.remove(url_f)
+                                        except ValueError:
+                                            pass
+                                    itens_atualizados.append({
+                                        **item_atual,
+                                        "fotos": fotos_restantes,
+                                        "fotos_originais": fotos_originais,
+                                    })
+                                st.session_state[itens_key] = itens_atualizados
+                                if erro_storage:
+                                    st.session_state[f"{itens_key}_feedback_foto"] = (
+                                        "error",
+                                        "Foto removida do cadastro, mas não foi possível "
+                                        f"excluir o arquivo do armazenamento: {erro_storage}",
+                                    )
+                                else:
+                                    st.session_state[f"{itens_key}_feedback_foto"] = (
+                                        "success",
+                                        "Foto excluída do cadastro.",
+                                    )
+                                st.rerun()
         if not fotos_existentes:
             st.caption("Nenhuma foto cadastrada.")
         col_salvar, col_deletar = st.columns(2)
