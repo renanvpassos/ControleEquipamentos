@@ -1125,6 +1125,19 @@ elif menu == "Editar Cadastro":
                             except Exception as e:
                                 st.error(f"Não foi possível remover a foto do cadastro: {e}")
                             else:
+                                fotos_excluidas_key = f"{itens_key}_fotos_excluidas"
+                                fotos_excluidas = st.session_state.get(
+                                    fotos_excluidas_key, {}
+                                )
+                                if not isinstance(fotos_excluidas, dict):
+                                    fotos_excluidas = {}
+                                fotos_excluidas_item = fotos_excluidas.setdefault(
+                                    item["chave_ui"], []
+                                )
+                                if url_f not in fotos_excluidas_item:
+                                    fotos_excluidas_item.append(url_f)
+                                st.session_state[fotos_excluidas_key] = fotos_excluidas
+
                                 caminho_foto = obter_caminho_bucket(url_f)
                                 erro_storage = None
                                 if caminho_foto and url_f not in fotos_restantes:
@@ -1254,6 +1267,16 @@ elif menu == "Editar Cadastro":
                             if item["substituir_fotos"] and item["fotos_novas"]
                             else list(item["fotos"])
                         )
+                        fotos_excluidas = st.session_state.get(
+                            f"{itens_key}_fotos_excluidas", {}
+                        )
+                        if not isinstance(fotos_excluidas, dict):
+                            fotos_excluidas = {}
+                        for foto_excluida in fotos_excluidas.get(item["chave_ui"], []):
+                            try:
+                                fotos_salvas.remove(foto_excluida)
+                            except ValueError:
+                                pass
                         for foto in item["fotos_novas"]:
                             extensao = foto.name.split(".")[-1].lower()
                             timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
@@ -1339,6 +1362,10 @@ elif menu == "Editar Cadastro":
                                 f"excluir os arquivos: {erro_exclusao_fotos}"
                             )
                         else:
+                            st.session_state.pop(
+                                f"{itens_key}_fotos_excluidas",
+                                None,
+                            )
                             st.session_state.pop(itens_key, None)
                             st.rerun()
 
