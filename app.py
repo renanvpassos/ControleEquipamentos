@@ -933,7 +933,12 @@ elif menu == "Editar Cadastro":
         ids_grupo = {item.get("id") for item in equip_selecionado if item.get("id") is not None}
         if itens_key not in st.session_state:
             st.session_state[itens_key] = [
-                {**item, "chave_ui": str(item.get("id") or f"legado_{indice}")}
+                {
+                    **item,
+                    "fotos": obter_lista_fotos(item.get("fotos")),
+                    "fotos_originais": obter_lista_fotos(item.get("fotos")),
+                    "chave_ui": str(item.get("id") or f"legado_{indice}"),
+                }
                 for indice, item in enumerate(equip_selecionado)
             ]
             st.session_state[f"{itens_key}_contador"] = 0
@@ -1052,6 +1057,9 @@ elif menu == "Editar Cadastro":
                 "service_tag": service_tag.strip().upper() or None,
                 "status": status,
                 "fotos": obter_lista_fotos(item.get("fotos")),
+                "fotos_originais": obter_lista_fotos(
+                    item.get("fotos_originais", item.get("fotos"))
+                ),
                 "fotos_novas": fotos_novas,
                 "substituir_fotos": substituir_fotos,
                 "tipo_original": item.get("tipo") or "",
@@ -1070,6 +1078,7 @@ elif menu == "Editar Cadastro":
                 "service_tag": None,
                 "status": "Ativo",
                 "fotos": [],
+                "fotos_originais": [],
             }]
             st.rerun()
 
@@ -1092,6 +1101,30 @@ elif menu == "Editar Cadastro":
                             st.image(bytes_foto, use_container_width=True)
                         except Exception as e:
                             st.warning(f"Não foi possível carregar a foto {url_f}: {e}")
+                        if st.button(
+                            "🗑️",
+                            key=f"{itens_key}_excluir_foto_{item['chave_ui']}_{i}",
+                            help="Excluir esta foto do cadastro",
+                        ):
+                            st.session_state[itens_key] = [
+                                {
+                                    **item_atual,
+                                    "fotos": [
+                                        foto
+                                        for indice_foto, foto in enumerate(
+                                            obter_lista_fotos(item_atual.get("fotos"))
+                                        )
+                                        if not (
+                                            item_atual["chave_ui"] == item["chave_ui"]
+                                            and indice_foto == i
+                                        )
+                                    ],
+                                }
+                                if item_atual["chave_ui"] == item["chave_ui"]
+                                else item_atual
+                                for item_atual in itens_edicao
+                            ]
+                            st.rerun()
         if not fotos_existentes:
             st.caption("Nenhuma foto cadastrada.")
         col_salvar, col_deletar = st.columns(2)
@@ -1115,8 +1148,14 @@ elif menu == "Editar Cadastro":
             fotos_invalidas = any(
                 not item["fotos_novas"]
                 and (
-                    not item["fotos"]
-                    or item["tipo"] != item["tipo_original"]
+                    (
+                        item["id"] is None
+                        and not item["fotos"]
+                    )
+                    or (
+                        item["id"] is not None
+                        and item["tipo"] != item["tipo_original"]
+                    )
                 )
                 for item in dados_itens_edicao
             )
@@ -1221,13 +1260,42 @@ elif menu == "Editar Cadastro":
                     except Exception as e:
                         st.error(f"Erro ao atualizar o cadastro no banco de dados: {e}")
                     else:
+                        fotos_removidas = {
+                            foto
+                            for item in dados_itens_edicao
+                            for foto in item["fotos_originais"]
+                            if foto not in fotos_por_item[item["chave_ui"]]
+                        }
+                        caminhos_fotos_removidas = [
+                            caminho
+                            for caminho in (
+                                obter_caminho_bucket(foto)
+                                for foto in fotos_removidas
+                            )
+                            if caminho
+                        ]
+                        erro_exclusao_fotos = None
+                        if caminhos_fotos_removidas:
+                            try:
+                                supabase.storage.from_(BUCKET_FOTOS).remove(
+                                    caminhos_fotos_removidas
+                                )
+                            except Exception as e:
+                                erro_exclusao_fotos = e
                         registrar_log(
                             "Atualizar",
                             f'O administrador atualizou o cadastro {equipamento_base.get("codigo_controle")} (Novo código: {codigo_novo}; equipamentos: {len(dados_itens_edicao)}).',
                             ed_colab.strip(),
                         )
                         st.success("Cadastro atualizado com sucesso!")
-                        st.rerun()
+                        if erro_exclusao_fotos:
+                            st.error(
+                                "As fotos foram removidas do cadastro, mas não foi possível "
+                                f"excluir os arquivos: {erro_exclusao_fotos}"
+                            )
+                        else:
+                            st.session_state.pop(itens_key, None)
+                            st.rerun()
 
         if btn_deletar:
             try:
