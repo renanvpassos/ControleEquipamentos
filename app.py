@@ -1027,6 +1027,11 @@ elif menu == "Editar Cadastro":
                     label_visibility="collapsed",
                     help="Envie uma ou mais fotos novas para este equipamento.",
                 )
+                substituir_fotos = st.checkbox(
+                    "Substituir",
+                    key=f"{itens_key}_substituir_fotos_{chave}",
+                    help="Quando enviar fotos novas, elas substituirão todas as fotos salvas deste equipamento.",
+                )
             with col_lixeira:
                 st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
                 if st.button("🗑️", key=f"{itens_key}_remover_{chave}", help="Remover este equipamento"):
@@ -1048,6 +1053,7 @@ elif menu == "Editar Cadastro":
                 "status": status,
                 "fotos": obter_lista_fotos(item.get("fotos")),
                 "fotos_novas": fotos_novas,
+                "substituir_fotos": substituir_fotos,
                 "tipo_original": item.get("tipo") or "",
             })
 
@@ -1159,7 +1165,11 @@ elif menu == "Editar Cadastro":
                 erro_upload = False
                 with st.spinner("Enviando fotos dos equipamentos para o servidor..."):
                     for idx, item in enumerate(dados_itens_edicao):
-                        fotos_salvas = list(item["fotos"])
+                        fotos_salvas = (
+                            []
+                            if item["substituir_fotos"] and item["fotos_novas"]
+                            else list(item["fotos"])
+                        )
                         for foto in item["fotos_novas"]:
                             extensao = foto.name.split(".")[-1].lower()
                             timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
