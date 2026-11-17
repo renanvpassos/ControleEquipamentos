@@ -1,1491 +1,227 @@
-import streamlit as st
-from supabase import create_client
-from datetime import date, datetime
-import pandas as pd
-import io
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-import ast
-import json
-import base64
-import hmac
+import tkinter as tk
+from tkinter import filedialog, messagebox
 import unicodedata
-from xml.sax.saxutils import escape
-import streamlit.components.v1 as components
-from postgrest.exceptions import APIError
-
-BUCKET_FOTOS = "equipamentos-fotos"
-TIPOS_EQUIPAMENTO = ["Monitor", "Computador", "Mouse", "Teclado", "Dispositivo de Áudio", "Adaptador Wi-Fi", "Estação de Trabalho"]
-TIPOS_EQUIPAMENTO_OBRIGATORIOS = ["Computador", "Estação de Trabalho"]
-MARCAS_EQUIPAMENTO = ["Dell", "HP", "Positivo", "Microsoft", "Multilaser", "MSI", "Acer", "Thin Client", "GIC", "AOC", "TP-LINK", "Samsung", "Logitech", "Knup", "Jebre", "LG", "Philips", "Newlink", "Lenovo", "FEASSO", "LEHMOX"]
-MARCA_NAO_APLICAVEL = "Não se aplica"
+import re
+import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 
 
-def obter_tipos_obrigatorios_faltantes(itens):
-    tipos_cadastrados = {item.get("tipo") for item in itens}
-    return [
-        tipo
-        for tipo in TIPOS_EQUIPAMENTO_OBRIGATORIOS
-        if tipo not in tipos_cadastrados
-    ]
-
-
-def obter_lista_fotos(valor):
-    if valor is None:
-        return []
-
-    if isinstance(valor, list):
-        return [str(f).strip() for f in valor if str(f).strip() not in ["", "None", "nan", "[]"]]
-
-    texto = str(valor).strip()
-
-    if texto in ["", "None", "nan", "[]"]:
-        return []
-
-    if texto.startswith("[") and texto.endswith("]"):
-        try:
-            lista = json.loads(texto)
-            return [str(f).strip() for f in lista if str(f).strip()]
-        except Exception:
-            try:
-                lista = ast.literal_eval(texto)
-                return [str(f).strip() for f in lista if str(f).strip()]
-            except Exception:
-                return [texto]
-
-    return [texto]
-
-
-def normalizar_nome_colaborador(nome):
-    if nome is None or pd.isna(nome):
+def normalizar_nome(texto):
+    """Remove acentos, pontuação, espaços extras e deixa tudo em minúsculo."""
+    if pd.isna(texto):
         return ""
-    texto = unicodedata.normalize("NFKD", str(nome).casefold())
-    palavras = "".join(
-        caractere for caractere in texto
-        if not unicodedata.combining(caractere)
-    ).split()
-    return " ".join(palavras[:2]) if len(palavras) >= 2 else " ".join(palavras)
+    texto = str(texto).strip().lower()
+    texto = unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode('utf-8')
+    texto = re.sub(r'[^a-z0-9\s]', '', texto)
+    texto = re.sub(r'\s+', ' ', texto)
+    return texto
 
 
-def obter_caminho_bucket(foto):
-    if not foto:
-        return None
-
-    foto = str(foto).strip()
-
-    marcador_publico = f"/storage/v1/object/public/{BUCKET_FOTOS}/"
-    if marcador_publico in foto:
-        return foto.split(marcador_publico, 1)[1]
-
-    marcador_bucket = f"{BUCKET_FOTOS}/"
-    if marcador_bucket in foto:
-        return foto.split(marcador_bucket, 1)[1]
-
-    if foto.startswith("http"):
-        return None
-
-    return foto
-
-def mostrar_carrossel_fotos(caminhos_fotos, codigo_card):
-    slides = []
-
-    for caminho_foto in caminhos_fotos:
-        bytes_foto = supabase.storage.from_(BUCKET_FOTOS).download(caminho_foto)
-        ext = caminho_foto.split(".")[-1].lower()
-
-        mime = "image/jpeg"
-        if ext == "png":
-            mime = "image/png"
-        elif ext == "webp":
-            mime = "image/webp"
-
-        img_base64 = base64.b64encode(bytes_foto).decode("utf-8")
-        slides.append(f"data:{mime};base64,{img_base64}")
-
-    slides_js = json.dumps(slides)
-
-    components.html(
-        f"""
-        <div class="carousel" id="carousel-{codigo_card}">
-            <img id="img-{codigo_card}" src="" onclick="openExpanded_{codigo_card}()" />
-
-            <button class="arrow left" onclick="prev_{codigo_card}(event)">‹</button>
-            <button class="arrow right" onclick="next_{codigo_card}(event)">›</button>
-        </div>
-
-        <script>
-            const slides_{codigo_card} = {slides_js};
-            let index_{codigo_card} = 0;
-
-            const img_{codigo_card} = document.getElementById("img-{codigo_card}");
-            const left_{codigo_card} = document.querySelector("#carousel-{codigo_card} .left");
-            const right_{codigo_card} = document.querySelector("#carousel-{codigo_card} .right");
-
-            function render_{codigo_card}() {{
-                img_{codigo_card}.src = slides_{codigo_card}[index_{codigo_card}];
-
-                if (slides_{codigo_card}.length <= 1) {{
-                    left_{codigo_card}.style.display = "none";
-                    right_{codigo_card} = "none";
-                }}
-            }}
-
-            function prev_{codigo_card}(event) {{
-                event.stopPropagation();
-                index_{codigo_card} = (index_{codigo_card} - 1 + slides_{codigo_card}.length) % slides_{codigo_card}.length;
-                render_{codigo_card}();
-            }}
-
-            function next_{codigo_card}(event) {{
-                event.stopPropagation();
-                index_{codigo_card} = (index_{codigo_card} + 1) % slides_{codigo_card}.length;
-                render_{codigo_card}();
-            }}
-
-            function closeExpanded_{codigo_card}() {{
-                const existing = window.parent.document.getElementById("expanded-photo-{codigo_card}");
-                if (existing) {{
-                    existing.remove();
-                }}
-            }}
-
-            function openExpanded_{codigo_card}() {{
-                const parentDoc = window.parent.document;
-
-                const oldModal = parentDoc.getElementById("expanded-photo-{codigo_card}");
-                if (oldModal) {{
-                    oldModal.remove();
-                }}
-
-                const overlay = parentDoc.createElement("div");
-                overlay.id = "expanded-photo-{codigo_card}";
-                overlay.style.position = "fixed";
-                overlay.style.inset = "0";
-                overlay.style.zIndex = "999999";
-                overlay.style.background = "rgba(0, 0, 0, 0.86)";
-                overlay.style.display = "flex";
-                overlay.style.alignItems = "center";
-                overlay.style.justifyContent = "center";
-                overlay.style.padding = "24px";
-                overlay.style.boxSizing = "border-box";
-                overlay.style.cursor = "zoom-out";
-
-                const expandedImg = parentDoc.createElement("img");
-                expandedImg.src = slides_{codigo_card}[index_{codigo_card}];
-                expandedImg.style.maxWidth = "96vw";
-                expandedImg.style.maxHeight = "92vh";
-                expandedImg.style.objectFit = "contain";
-                expandedImg.style.borderRadius = "10px";
-                expandedImg.style.boxShadow = "0 20px 70px rgba(0, 0, 0, 0.55)";
-                expandedImg.style.cursor = "default";
-
-                const closeBtn = parentDoc.createElement("button");
-                closeBtn.innerHTML = "×";
-                closeBtn.style.position = "fixed";
-                closeBtn.style.top = "18px";
-                closeBtn.style.right = "24px";
-                closeBtn.style.width = "44px";
-                closeBtn.style.height = "44px";
-                closeBtn.style.border = "0";
-                closeBtn.style.borderRadius = "999px";
-                closeBtn.style.background = "rgba(255, 255, 255, 0.18)";
-                closeBtn.style.color = "#fff";
-                closeBtn.style.fontSize = "34px";
-                closeBtn.style.lineHeight = "34px";
-                closeBtn.style.cursor = "pointer";
-                closeBtn.style.paddingBottom = "4px";
-
-                overlay.onclick = function() {{
-                    overlay.remove();
-                }};
-
-                expandedImg.onclick = function(event) {{
-                    event.stopPropagation();
-                }};
-
-                closeBtn.onclick = function(event) {{
-                    event.stopPropagation();
-                    overlay.remove();
-                }};
-
-                overlay.appendChild(expandedImg);
-                overlay.appendChild(closeBtn);
-                parentDoc.body.appendChild(overlay);
-            }}
-
-            render_{codigo_card}();
-        </script>
-
-        <style>
-            .carousel {{
-                position: relative;
-                width: 100%;
-                height: 220px;
-                overflow: hidden;
-                border-radius: 8px;
-                background: #f3f4f6;
-            }}
-
-            .carousel img {{
-                width: 100%;
-                height: 100%;
-                object-fit: cover;
-                display: block;
-                cursor: zoom-in;
-            }}
-
-            .arrow {{
-                position: absolute;
-                top: 50%;
-                transform: translateY(-50%);
-                width: 34px;
-                height: 46px;
-                border: 0;
-                border-radius: 999px;
-                background: rgba(0, 0, 0, 0.18);
-                color: white;
-                font-size: 32px;
-                line-height: 32px;
-                cursor: pointer;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                padding-bottom: 5px;
-            }}
-
-            .arrow:hover {{
-                background: rgba(0, 0, 0, 0.32);
-            }}
-
-            .left {{
-                left: 8px;
-            }}
-
-            .right {{
-                right: 8px;
-            }}
-        </style>
-        """,
-        height=232,
-    )
+def obter_chaves_flexiveis(texto_normalizado):
+    """Gera várias formas de reconhecimento para o nome (completo, iniciais/parciais e primeiro+último)."""
+    partes = texto_normalizado.split()
+    chaves = {texto_normalizado}  # Chave completa
     
-# --- Configuração Supabase ---
-@st.cache_resource
-def init_connection():
-    return create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+    if len(partes) >= 2:
+        # 1. Dois primeiros nomes (ex: joao silva)
+        chaves.add(f"{partes[0]} {partes[1]}")
+        # 2. Primeiro e último nome (ex: maria andrade)
+        chaves.add(f"{partes[0]} {partes[-1]}")
+        
+    return chaves
 
-supabase = init_connection()
 
-st.set_page_config(page_title="Gestão de Equipamentos", layout="wide")
+def limpar_anydesk(valor):
+    """Remove espaços em branco de dentro do número do AnyDesk."""
+    if pd.isna(valor):
+        return ""
+    # Remove qualquer tipo de espaço em branco
+    return re.sub(r'\s+', '', str(valor)).strip()
 
-# --- Acesso público e área administrativa protegida por senha ---
-if "admin_access_requested" not in st.session_state:
-    st.session_state.admin_access_requested = False
-if "admin_authenticated" not in st.session_state:
-    st.session_state.admin_authenticated = False
 
-if st.session_state.admin_access_requested and not st.session_state.admin_authenticated:
-    st.title("Acesso à área administrativa")
-    st.caption("Informe a senha administrativa configurada nos secrets do Streamlit.")
-    with st.form("admin_login_form", clear_on_submit=True):
-        senha_admin = st.text_input("Senha administrativa", type="password")
-        entrar = st.form_submit_button("Entrar", use_container_width=True)
-    if entrar:
-        senha_configurada = st.secrets.get("ADMIN_PASSWORD")
-        if not senha_configurada:
-            st.error("A chave ADMIN_PASSWORD não está definida nos secrets do Streamlit.")
-        elif hmac.compare_digest(senha_admin, str(senha_configurada)):
-            st.session_state.admin_authenticated = True
-            st.session_state.admin_access_requested = False
-            st.rerun()
-        else:
-            st.error("Senha administrativa incorreta.")
-    if st.button("Voltar ao cadastro público"):
-        st.session_state.admin_access_requested = False
-        st.rerun()
-    st.stop()
+def main():
+    root = tk.Tk()
+    root.withdraw()
 
-# --- Funções Auxiliares de Log ---
-def registrar_log(acao, resumo, colaborador):
+    # 1. Selecionar a planilha de origem
+    caminho_origem = filedialog.askopenfilename(
+        title="1. Selecione a PLANILHA DE ORIGEM",
+        filetypes=[("Arquivos Excel", "*.xlsx *.xls")]
+    )
+    if not caminho_origem:
+        return
+
+    # 2. Selecionar a segunda planilha (com os dados do Anydesk)
+    caminho_anydesk = filedialog.askopenfilename(
+        title="2. Selecione a SEGUNDA PLANILHA (com a coluna do Anydesk)",
+        filetypes=[("Arquivos Excel", "*.xlsx *.xls")]
+    )
+    if not caminho_anydesk:
+        return
+
     try:
-        supabase.table("logs_sistema").insert({
-            "colaborador": colaborador,
-            "acao": acao,
-            "resumo": resumo
-        }).execute()
-    except APIError as e:
-        st.warning(
-            "A operação foi concluída, mas não foi possível registrar a atividade. "
-            f"Resposta do Supabase: {e}"
-        )
+        df_origem = pd.read_excel(caminho_origem, dtype=str)
+        df_anydesk = pd.read_excel(caminho_anydesk, dtype=str)
 
+        col_nome_origem = "Nome do Colaborador"
+        col_nome_anydesk = "Qual seu nome completo?"
+        col_num_anydesk = "Informe o número do anydesk da sua máquina"
 
-def gerar_proximos_codigos_controle(quantidade):
-    codigos_cadastrados = []
-    inicio = 0
-    tamanho_pagina = 1000
-    while True:
-        resposta = (
-            supabase.table("equipamentos")
-            .select("codigo_controle")
-            .order("id")
-            .range(inicio, inicio + tamanho_pagina - 1)
-            .execute()
-        )
-        pagina = resposta.data or []
-        codigos_cadastrados.extend(pagina)
-        if len(pagina) < tamanho_pagina:
-            break
-        inicio += tamanho_pagina
+        if col_nome_origem not in df_origem.columns:
+            messagebox.showerror("Erro", f"Coluna '{col_nome_origem}' não encontrada na planilha de origem.")
+            return
+        if col_nome_anydesk not in df_anydesk.columns or col_num_anydesk not in df_anydesk.columns:
+            messagebox.showerror("Erro", "Colunas esperadas não encontradas na segunda planilha.")
+            return
 
-    codigos = [
-        int(str(item.get("codigo_controle")).strip())
-        for item in codigos_cadastrados
-        if str(item.get("codigo_controle", "")).strip().isdecimal()
-    ]
-    proximo_codigo = max(codigos, default=-1) + 1
-    return [str(proximo_codigo + indice) for indice in range(quantidade)]
+        # Padroniza visualmente os nomes da origem em CAIXA ALTA
+        df_origem[col_nome_origem] = df_origem[col_nome_origem].fillna("").astype(str).str.upper().str.strip()
 
+        # Dicionários de mapeamento
+        mapa_anydesk_direto = {}
+        mapa_anydesk_flexivel = {}
+        mapa_nome_mais_longo = {}
 
-def obter_colaboradores_cadastrados():
-    colaboradores = []
-    inicio = 0
-    tamanho_pagina = 1000
-    while True:
-        resposta = (
-            supabase.table("equipamentos")
-            .select("colaborador")
-            .order("id")
-            .range(inicio, inicio + tamanho_pagina - 1)
-            .execute()
-        )
-        pagina = resposta.data or []
-        colaboradores.extend(
-            item.get("colaborador") for item in pagina if item.get("colaborador")
-        )
-        if len(pagina) < tamanho_pagina:
-            break
-        inicio += tamanho_pagina
-    return colaboradores
-
-
-# --- Funções de Geração de Arquivos (PDF e Excel) ---
-def gerar_excel(df):
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        df.to_excel(writer, index=False, sheet_name='Equipamentos')
-    return output.getvalue()
-
-
-def criar_df_equipamentos_por_colaborador(registros, tipo, colaborador=None):
-    nomes = sorted(
-        {
-            str(item.get("colaborador")).strip()
-            for item in registros
-            if item.get("colaborador") and str(item.get("colaborador")).strip()
-        },
-        key=str.casefold,
-    )
-    if colaborador is not None:
-        nomes = [
-            nome for nome in nomes
-            if nome.casefold() == colaborador.casefold()
-        ]
-
-    registros_tipo = [
-        item
-        for item in registros
-        if str(item.get("tipo") or "").strip().casefold() == tipo.casefold()
-    ]
-    linhas = []
-    for nome in nomes:
-        equipamentos = [
-            item
-            for item in registros_tipo
-            if str(item.get("colaborador") or "").strip().casefold()
-            == nome.casefold()
-        ]
-        if not equipamentos:
-            linhas.append({
-                "Nome do Colaborador": nome,
-                "Equipamento": "Não possui",
-            })
-            continue
-
-        for equipamento in equipamentos:
-            detalhes = [tipo]
-            marca = str(equipamento.get("marca") or "").strip()
-            modelo = str(equipamento.get("modelo") or "").strip()
-            etiqueta = str(equipamento.get("service_tag") or "").strip()
-            if marca and marca.casefold() != "não se aplica":
-                detalhes.append(marca)
-            if modelo:
-                detalhes.append(f"Modelo: {modelo}")
-            if etiqueta:
-                detalhes.append(f"Etiqueta: {etiqueta}")
-            linhas.append({
-                "Nome do Colaborador": nome,
-                "Equipamento": " | ".join(detalhes),
-            })
-
-    return pd.DataFrame(
-        linhas,
-        columns=["Nome do Colaborador", "Equipamento"],
-    )
-
-
-def gerar_pdf(df, titulo_relatorio="Relatório de Equipamentos"):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
-    
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=colors.HexColor("#1A365D"), spaceAfter=20)
-    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10)
-    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.white, fontName="Helvetica-Bold")
-    
-    story.append(Paragraph(escape(str(titulo_relatorio)), title_style))
-    story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
-    story.append(Spacer(1, 15))
-    
-    colunas_pdf = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'colaborador', 'status', 'data_registro']
-    colunas_existentes = [c for c in colunas_pdf if c in df.columns]
-    
-    if colunas_existentes and len(colunas_existentes) < len(colunas_pdf):
-        st.warning(f"Algumas colunas não foram encontradas: {set(colunas_pdf) - set(colunas_existentes)}")
+        # Processa a segunda planilha (Anydesk) ordenando do maior para o menor nome
+        df_anydesk_limpo = df_anydesk[df_anydesk[col_nome_anydesk].notna()].copy()
+        df_anydesk_limpo["_completo_norm"] = df_anydesk_limpo[col_nome_anydesk].apply(normalizar_nome)
+        df_anydesk_limpo = df_anydesk_limpo[df_anydesk_limpo["_completo_norm"] != ""]
         
-    df_pdf = df[colunas_existentes].copy() if colunas_existentes else df.copy()
-    table_data = [[Paragraph(escape(str(col).upper()), header_style) for col in df_pdf.columns]]
-    
-    for _, row in df_pdf.iterrows():
-        row_cells = []
-        for val in row.values:
-            row_cells.append(Paragraph(escape(str(val)) if pd.notnull(val) else "", cell_style))
-        table_data.append(row_cells)
-    
-    t = Table(table_data, repeatRows=1)
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")),
-        ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAFC")]),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
-    ]))
-    story.append(t)
-    doc.build(story)
-    return buffer.getvalue()
+        # Limpa os espaços dos números do AnyDesk
+        df_anydesk_limpo[col_num_anydesk] = df_anydesk_limpo[col_num_anydesk].apply(limpar_anydesk)
 
+        # Ordena por tamanho do texto (decrescente) para priorizar o nome mais completo
+        df_anydesk_limpo["_tamanho"] = df_anydesk_limpo["_completo_norm"].str.len()
+        df_anydesk_limpo = df_anydesk_limpo.sort_values("_tamanho", ascending=False)
 
-def gerar_pdf_consolidado(df_ordenado, titulo_geral="Relatório Geral Consolidado de Equipamentos"):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    story = []
-    
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=16, leading=20, textColor=colors.HexColor("#1A365D"), spaceAfter=15)
-    colab_style = ParagraphStyle('ColabStyle', parent=styles['Heading2'], fontSize=13, leading=16, textColor=colors.HexColor("#2C5282"), spaceBefore=10, spaceAfter=10)
-    cell_style = ParagraphStyle('CellStyle', parent=styles['Normal'], fontSize=8, leading=10)
-    header_style = ParagraphStyle('HeaderStyle', parent=styles['Normal'], fontSize=9, leading=11, textColor=colors.white, fontName="Helvetica-Bold")
-    
-    colunas_pdf = ['codigo_controle', 'service_tag', 'tipo', 'marca', 'status', 'data_registro']
-    grupos = list(df_ordenado.groupby('colaborador', sort=False))
-    
-    for i, (colaborador, group) in enumerate(grupos):
-        if i == 0:
-            story.append(Paragraph(titulo_geral, title_style))
-            story.append(Paragraph(f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", styles['Normal']))
-            story.append(Spacer(1, 15))
+        for _, row in df_anydesk_limpo.iterrows():
+            c_comp = row["_completo_norm"]
+            any_val = row[col_num_anydesk]
+            nome_original = str(row[col_nome_anydesk]).strip().upper()
             
-        story.append(Paragraph(f"Colaborador: {colaborador}", colab_style))
-        story.append(Spacer(1, 5))
-        
-        df_pdf = group[colunas_pdf].copy() if all(c in group.columns for c in colunas_pdf) else group.iloc[:, :6]
-        table_data = [[Paragraph(col.upper(), header_style) for col in df_pdf.columns]]
-        
-        for _, row in df_pdf.iterrows():
-            row_cells = []
-            for val in row.values:
-                row_cells.append(Paragraph(str(val) if pd.notnull(val) else "", cell_style))
-            table_data.append(row_cells)
-            
-        t = Table(table_data, repeatRows=1)
-        t.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#1A365D")),
-            ('ALIGN', (0,0), (-1,-1), 'LEFT'),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ('TOPPADDING', (0,0), (-1,-1), 6),
-            ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor("#F7FAFC")]),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor("#E2E8F0")),
-        ]))
-        story.append(t)
-        
-        if i < len(grupos) - 1:
-            story.append(PageBreak())
-            
-    doc.build(story)
-    return buffer.getvalue()
+            if any_val:
+                mapa_anydesk_direto[c_comp] = any_val
+                
+            chaves = obter_chaves_flexiveis(c_comp)
+            for chave in chaves:
+                if any_val:
+                    mapa_anydesk_flexivel[chave] = any_val
+                if chave not in mapa_nome_mais_longo or len(nome_original) > len(mapa_nome_mais_longo[chave]):
+                    mapa_nome_mais_longo[chave] = nome_original
 
+        # Aplica os cruzamentos na planilha de origem
+        anydesk_resultados = []
+        chaves_encontradas_origem = set()
 
-# --- Menu da área administrativa ---
-if st.session_state.admin_authenticated:
-    opcoes_menu = [
-        "Cadastrar Equipamento",
-        "Lista de Equipamentos",
-        "Relatórios",
-        "Log de Atividades",
-    ]
+        for idx, row in df_origem.iterrows():
+            nome_orig = str(row[col_nome_origem])
+            c_comp_orig = normalizar_nome(nome_orig)
+            chaves_orig = obter_chaves_flexiveis(c_comp_orig)
 
-    st.sidebar.title("Área administrativa")
-    st.sidebar.info("Acesso autorizado por senha administrativa.")
-    menu = st.sidebar.radio("Navegação", opcoes_menu)
+            valor_any = ""
+            nome_escolhido = nome_orig
 
-    if st.sidebar.button("Voltar ao cadastro público"):
-        st.session_state.admin_authenticated = False
-        st.rerun()
-
-    if st.sidebar.button("Sair do Sistema"):
-        st.session_state.admin_authenticated = False
-        st.rerun()
-else:
-    menu = "Cadastrar Equipamento"
-
-# --- 1. CADASTRAR EQUIPAMENTO ---
-if menu == "Cadastrar Equipamento":
-    st.markdown(
-        """
-        <style>
-        .stMainBlockContainer {
-            max-width: 1400px;
-            margin-left: auto;
-            margin-right: auto;
-            padding-left: 0.75rem;
-            padding-right: 0.75rem;
-        }
-        .stMainBlockContainer .stHorizontalBlock {
-            gap: 0.35rem;
-        }
-        .stMainBlockContainer [data-testid="stFileUploaderDropzone"] {
-            min-height: 0;
-            padding: 0.25rem 0.35rem;
-            gap: 0.2rem;
-        }
-        .stMainBlockContainer [data-testid="stFileUploaderDropzoneInstructions"] {
-            display: none;
-        }
-        .stMainBlockContainer [data-testid="stFileUploaderDropzone"] button {
-            min-height: 1.8rem;
-            padding: 0.2rem 0.4rem;
-            font-size: 0.75rem;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<h2 style='text-align: center;'>Cadastro de Equipamentos</h2>",
-        unsafe_allow_html=True,
-    )
-    mensagem_sucesso = st.session_state.pop("cadastro_sucesso_pendente", None)
-    if mensagem_sucesso:
-        st.success(mensagem_sucesso)
-
-    if not st.session_state.admin_authenticated:
-        st.caption("Cadastre o seu equipamento abaixo, os campos com * são obrigatórios.")
-
-    if "cadastro_versao" not in st.session_state:
-        st.session_state.cadastro_versao = 0
-    cadastro_prefixo = f"cadastro_{st.session_state.cadastro_versao}"
-    itens_key = f"{cadastro_prefixo}_itens"
-    if itens_key not in st.session_state:
-        st.session_state[itens_key] = [{"chave": "0"}]
-
-    campos_obrigatorios_vazios = []
-    colaborador_key = f"{cadastro_prefixo}_colaborador"
-    if not str(st.session_state.get(colaborador_key, "") or "").strip():
-        campos_obrigatorios_vazios.append(colaborador_key)
-    for item in st.session_state[itens_key]:
-        chave = item["chave"]
-        tipo_key = f"{cadastro_prefixo}_tipo_{chave}"
-        tipo_atual = st.session_state.get(tipo_key)
-        if not tipo_atual:
-            campos_obrigatorios_vazios.append(tipo_key)
-        elif tipo_atual != "Estação de Trabalho":
-            marca_key = f"{cadastro_prefixo}_marca_{chave}"
-            if not st.session_state.get(marca_key):
-                campos_obrigatorios_vazios.append(marca_key)
-        foto_key = f"{cadastro_prefixo}_foto_{chave}"
-        if not st.session_state.get(foto_key):
-            campos_obrigatorios_vazios.append(foto_key)
-
-    if campos_obrigatorios_vazios:
-        estilos_campos_vazios = []
-        for campo_key in campos_obrigatorios_vazios:
-            seletor_campo = f".st-key-{campo_key}"
-            estilos_campos_vazios.append(
-                f"""
-                {seletor_campo} input,
-                {seletor_campo} textarea,
-                {seletor_campo} [data-baseweb="select"] > div {{
-                    background-color: #fff1f0 !important;
-                    border-color: #f2a6a0 !important;
-                }}
-                {seletor_campo} [data-testid="stFileUploaderDropzone"] {{
-                    background-color: #fff1f0 !important;
-                    border-color: #f2a6a0 !important;
-                }}
-                """
-            )
-        st.markdown(
-            f"<style>{''.join(estilos_campos_vazios)}</style>",
-            unsafe_allow_html=True,
-        )
-
-    colaborador = st.text_input(
-        "Colaborador Responsável (Nome e Sobrenome) (Obrigatório)*",
-        key=f"{cadastro_prefixo}_colaborador",
-        placeholder="Ex.: Maria Silva",
-    )
-    descricao = st.text_area(
-        "Tem algum detalhe no equipamento? Descreva abaixo (max 240 caracteres).",
-        max_chars=240,
-        key=f"{cadastro_prefixo}_descricao",
-        placeholder="Ex.: a tela apresenta riscos ou o teclado está com uma tecla solta.",
-    )
-
-    st.markdown("**Equipamentos do cadastro**")
-    itens_cadastro = st.session_state[itens_key]
-    dados_itens = []
-    for indice, item in enumerate(itens_cadastro):
-        chave = item["chave"]
-        workstation = (
-            st.session_state.get(f"{cadastro_prefixo}_tipo_{chave}")
-            == "Estação de Trabalho"
-        )
-        if workstation:
-            col_tipo, col_foto, col_lixeira = st.columns([7.5, 1.2, 0.45])
-        else:
-            col_tipo, col_marca, col_tag, col_foto, col_lixeira = st.columns([2.2, 1.8, 1.8, 1.2, 0.45])
-        with col_tipo:
-            tipo = st.selectbox(
-                "Tipo de equipamento*",
-                TIPOS_EQUIPAMENTO,
-                key=f"{cadastro_prefixo}_tipo_{chave}",
-                index=None,
-                placeholder="Ex.: Monitor",
-            )
-        if tipo == "Estação de Trabalho":
-            st.session_state.pop(f"{cadastro_prefixo}_marca_{chave}", None)
-            st.session_state.pop(f"{cadastro_prefixo}_tag_{chave}", None)
-            marca = MARCA_NAO_APLICAVEL
-            service_tag = ""
-        else:
-            with col_marca:
-                marca = st.selectbox(
-                    "Marca*",
-                    MARCAS_EQUIPAMENTO,
-                    key=f"{cadastro_prefixo}_marca_{chave}",
-                    index=None,
-                    placeholder="Ex.: Dell",
-                )
-            with col_tag:
-                service_tag = st.text_input(
-                    "Etiqueta Patrimônio Mult (se tiver)",
-                    key=f"{cadastro_prefixo}_tag_{chave}",
-                    placeholder="Ex.: 001234",
-                )
-        with col_lixeira:
-            st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
-            if st.button("🗑️", key=f"{cadastro_prefixo}_remover_{chave}", help="Remover este equipamento"):
-                if len(itens_cadastro) > 1:
-                    st.session_state[itens_key] = [
-                        item_atual for item_atual in itens_cadastro
-                        if item_atual["chave"] != chave
-                    ]
-                    st.rerun()
-                else:
-                    st.warning("O cadastro precisa ter pelo menos um equipamento.")
-        with col_foto:
-            st.markdown("<div style='height: 1.75rem;'></div>", unsafe_allow_html=True)
-            fotos = st.file_uploader(
-                "Fotos do equipamento*",
-                type=["png", "jpg", "jpeg"],
-                accept_multiple_files=True,
-                key=f"{cadastro_prefixo}_foto_{chave}",
-                label_visibility="collapsed",
-                help="Anexe uma ou mais fotos nítidas do equipamento, de preferência com a etiqueta visível.",
-            )
-        dados_itens.append({
-            "tipo": tipo,
-            "marca": marca,
-            "service_tag": service_tag.strip().upper() or None,
-            "fotos": fotos,
-        })
-
-    col_adicionar, _ = st.columns([1, 8])
-    with col_adicionar:
-        if st.button("➕ Adicionar outro", key=f"{cadastro_prefixo}_adicionar"):
-            proxima_chave = str(max(int(item["chave"]) for item in itens_cadastro) + 1)
-            st.session_state[itens_key] = itens_cadastro + [{"chave": proxima_chave}]
-            st.rerun()
-
-    if st.button("Salvar Cadastro", key=f"{cadastro_prefixo}_salvar"):
-        codigo = None
-        tags = [item["service_tag"] for item in dados_itens if item["service_tag"]]
-        tags_repetidas = len(tags) != len(set(tags))
-        itens_invalidos = any(
-            not item["tipo"]
-            or (
-                item["tipo"] != "Estação de Trabalho"
-                and not item["marca"]
-            )
-            for item in dados_itens
-        )
-        tipos_obrigatorios_faltantes = obter_tipos_obrigatorios_faltantes(dados_itens)
-        fotos_invalidas = any(not item["fotos"] for item in dados_itens)
-
-        if itens_invalidos or not colaborador.strip():
-            st.error("Preencha o tipo e a marca dos equipamentos aplicáveis e o colaborador.")
-        elif tipos_obrigatorios_faltantes:
-            st.error(
-                "O cadastro precisa incluir pelo menos um de cada equipamento obrigatório: "
-                f"{', '.join(tipos_obrigatorios_faltantes)}."
-            )
-        elif fotos_invalidas:
-            st.error("Anexe pelo menos uma foto para cada equipamento cadastrado.")
-        elif tags_repetidas:
-            st.error("Não é permitido repetir a Etiqueta Patrimônio Mult no mesmo cadastro.")
-        else:
-            try:
-                colaboradores_existentes = obter_colaboradores_cadastrados()
-                colaboradores_duplicados = sorted({
-                    str(nome).strip()
-                    for nome in colaboradores_existentes
-                    if normalizar_nome_colaborador(nome)
-                    == normalizar_nome_colaborador(colaborador)
-                })
-            except Exception as e:
-                st.error(f"Erro ao verificar colaboradores já cadastrados: {e}")
-                codigo = None
-                check_tags = None
+            # 1. Tenta bater direto pela chave completa
+            if c_comp_orig in mapa_anydesk_direto:
+                valor_any = mapa_anydesk_direto[c_comp_orig]
+                chaves_encontradas_origem.update(chaves_orig)
             else:
-                if colaboradores_duplicados:
-                    st.error(
-                        "Já existe um cadastro para este colaborador: "
-                        f"{', '.join(colaboradores_duplicados)}. "
-                        "A comparação ignora acentos e maiúsculas e considera os "
-                        "dois primeiros nomes. Verifique antes de continuar."
-                    )
-                    codigo = None
-                    check_tags = None
-                else:
-                    try:
-                        codigos = gerar_proximos_codigos_controle(len(dados_itens))
-                        codigo = codigos[0]
-                        check_tags = (
-                            supabase.table("equipamentos")
-                            .select("service_tag")
-                            .in_("service_tag", tags)
-                            .execute()
-                            if tags
-                            else None
-                        )
-                    except Exception as e:
-                        st.error(f"Erro ao preparar o cadastro no banco de dados: {e}")
-                        codigo = None
-                        check_tags = None
-
-            if codigo is not None and check_tags and check_tags.data:
-                tags_existentes = {
-                    item.get("service_tag")
-                    for item in check_tags.data
-                    if item.get("service_tag")
-                }
-                st.error(f"Já existe equipamento cadastrado com a Etiqueta Patrimônio Mult: {', '.join(sorted(tags_existentes))}.")
-            elif codigo is not None:
-                fotos_por_item = []
-                erro_upload = False
-                with st.spinner("Enviando fotos dos equipamentos para o servidor..."):
-                    for idx, item in enumerate(dados_itens):
-                        urls_fotos_item = []
-                        for foto in item["fotos"]:
-                            extensao = foto.name.split(".")[-1].lower()
-                            codigo_equipamento = codigos[idx]
-                            timestamp = datetime.now().strftime("%Y%m%d%H%M%S%f")
-                            caminho_storage = f"{codigo_equipamento}/{codigo_equipamento}_{timestamp}.{extensao}"
-                            try:
-                                supabase.storage.from_("equipamentos-fotos").upload(caminho_storage, foto.read())
-                                urls_fotos_item.append(
-                                    supabase.storage.from_("equipamentos-fotos").get_public_url(caminho_storage)
-                                )
-                            except Exception as e:
-                                st.error(f"Falha ao enviar a foto {foto.name}: {e}")
-                                erro_upload = True
-                                break
-                        fotos_por_item.append(urls_fotos_item)
-                        if erro_upload:
-                            break
-
-                if not erro_upload:
-                    registros = [
-                        {
-                            "codigo_controle": codigos[indice],
-                            "service_tag": item["service_tag"],
-                            "tipo": item["tipo"],
-                            "marca": item["marca"],
-                            "colaborador": colaborador.strip(),
-                            "descricao": descricao.strip() or None,
-                            "fotos": fotos_por_item[indice],
-                            "status": "Ativo",
-                            "criado_por": (
-                                "Administrador"
-                                if st.session_state.admin_authenticated
-                                else "Acesso público"
-                            ),
-                            "data_registro": str(date.today()),
-                        }
-                        for indice, item in enumerate(dados_itens)
-                    ]
-                    erro_salvamento = None
-                    for tentativa in range(3):
-                        try:
-                            supabase.table("equipamentos").insert(registros).execute()
-                        except Exception as e:
-                            erro_salvamento = e
-                            if (
-                                getattr(e, "code", None) == "23505"
-                                and "equipamentos_codigo_controle_key" in str(e)
-                                and tentativa < 2
-                            ):
-                                try:
-                                    codigos = gerar_proximos_codigos_controle(len(dados_itens))
-                                except Exception as erro_codigo:
-                                    erro_salvamento = erro_codigo
-                                    break
-                                for indice, registro in enumerate(registros):
-                                    registro["codigo_controle"] = codigos[indice]
-                                continue
-                        else:
-                            erro_salvamento = None
+                # 2. Tenta bater pelas chaves flexíveis
+                for chave in chaves_orig:
+                    if chave in mapa_anydesk_flexivel:
+                        valor_any = mapa_anydesk_flexivel[chave]
+                        if chave in mapa_nome_mais_longo:
+                            nome_escolhido = mapa_nome_mais_longo[chave]
+                        chaves_encontradas_origem.update(chaves_orig)
                         break
 
-                    if erro_salvamento is not None:
-                        st.error(f"Erro ao salvar o cadastro no banco de dados: {erro_salvamento}")
-                    else:
-                        codigo_inicial = codigos[0]
-                        codigo_final = codigos[-1]
-                        faixa_codigos = (
-                            codigo_inicial
-                            if codigo_inicial == codigo_final
-                            else f"{codigo_inicial} a {codigo_final}"
-                        )
-                        if st.session_state.admin_authenticated:
-                            tipos_cadastrados = ", ".join(item["tipo"] for item in dados_itens)
-                            log_msg = f'O administrador cadastrou os equipamentos "{tipos_cadastrados}", Códigos: {faixa_codigos}, Colaborador: "{colaborador.strip()}"'
-                            registrar_log("Inserir", log_msg, colaborador.strip())
+            df_origem.at[idx, col_nome_origem] = nome_escolhido
+            anydesk_resultados.append(valor_any)
 
-                        st.session_state["cadastro_sucesso_pendente"] = (
-                            f"{len(registros)} equipamento(s) cadastrado(s) com sucesso. "
-                            f"Código(s): {faixa_codigos}."
-                        )
-                        st.session_state.cadastro_versao += 1
-                        st.rerun()
+        df_origem["Anydesk"] = anydesk_resultados
 
-# --- 2. LISTA DE EQUIPAMENTOS ---
-elif menu == "Lista de Equipamentos":
-    st.header("Lista Geral de Equipamentos")
-    itens_por_consulta = 1000
-    dados_equipamentos = []
-    inicio_consulta = 0
+        # Identifica quem está no AnyDesk mas não casou na origem
+        novas_linhas = []
+        for _, row_any in df_anydesk_limpo.iterrows():
+            c_comp = row_any["_completo_norm"]
+            chaves_any = obter_chaves_flexiveis(c_comp)
+            
+            if not any(chave in chaves_encontradas_origem for chave in chaves_any):
+                nome_maiusculo = str(row_any[col_nome_anydesk]).strip().upper()
+                nova_linha = {
+                    col_nome_origem: nome_maiusculo,
+                    "Anydesk": row_any[col_num_anydesk]
+                }
+                for col in df_origem.columns:
+                    if col not in nova_linha:
+                        nova_linha[col] = ""
+                novas_linhas.append(nova_linha)
+                chaves_encontradas_origem.update(chaves_any)
 
-    while True:
-        res_equip = (
-            supabase.table("equipamentos")
-            .select("*")
-            .order("data_registro", desc=False)
-            .range(inicio_consulta, inicio_consulta + itens_por_consulta - 1)
-            .execute()
+        linha_inicio_extras = len(df_origem) + 2
+        linha_fim_extras = None
+
+        if novas_linhas:
+            df_extras = pd.DataFrame(novas_linhas)
+            df_origem = pd.concat([df_origem, df_extras], ignore_index=True)
+            linha_fim_extras = linha_inicio_extras + len(novas_linhas) - 1
+
+        # 3. Salvar arquivo
+        caminho_saida = filedialog.asksaveasfilename(
+            title="Salvar planilha tratada como...",
+            defaultextension=".xlsx",
+            initialfile="Planilha_Tratada_Anydesk.xlsx",
+            filetypes=[("Arquivos Excel", "*.xlsx")]
         )
-        dados_pagina_consulta = res_equip.data or []
-        dados_equipamentos.extend(dados_pagina_consulta)
-        if len(dados_pagina_consulta) < itens_por_consulta:
-            break
-        inicio_consulta += itens_por_consulta
+        if not caminho_saida:
+            return
 
-    if dados_equipamentos:
-        df_completo = pd.DataFrame(dados_equipamentos)
+        df_origem.to_excel(caminho_saida, index=False)
 
-        colunas_ordenadas = [
-            "codigo_controle",
-            "service_tag",
-            "tipo",
-            "marca",
-            "modelo",
-            "colaborador",
-            "descricao",
-            "data_registro",
-            "criado_por",
-            "status",
-            "fotos",
-        ]
-        for coluna in colunas_ordenadas:
-            if coluna not in df_completo.columns:
-                df_completo[coluna] = None
-        df_completo = df_completo[colunas_ordenadas]
+        # 4. Formatação com OpenPyXL
+        wb = load_workbook(caminho_saida)
+        ws = wb.active
 
-        grupos_colaboradores = {}
-        nomes_colaboradores = {}
-        for indice_linha, item in df_completo.iterrows():
-            valor_nome = item.get("colaborador")
-            nome = "" if pd.isna(valor_nome) else str(valor_nome).strip()
-            chave = normalizar_nome_colaborador(nome) or f"sem_colaborador_{indice_linha}"
-            grupos_colaboradores.setdefault(chave, []).append(item)
-            nomes_colaboradores.setdefault(chave, nome or "Sem colaborador")
+        col_idx_anydesk = None
+        for cell in ws[1]:
+            if cell.value == "Anydesk":
+                col_idx_anydesk = cell.column
+                break
 
-        col_filtro1, col_filtro2 = st.columns([2, 1])
+        preenchimento_vermelho = PatternFill(start_color="FF6B6B", end_color="FF6B6B", fill_type="solid")
+        preenchimento_amarelo = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
 
-        with col_filtro1:
-            pesquisa = st.text_input("Pesquisar na lista (Qualquer referencia):")
+        if linha_fim_extras:
+            for row in range(linha_inicio_extras, linha_fim_extras + 1):
+                for col in range(1, ws.max_column + 1):
+                    ws.cell(row=row, column=col).fill = preenchimento_amarelo
 
-        with col_filtro2:
-            opcoes_colaboradores = sorted(
-                grupos_colaboradores,
-                key=lambda chave: nomes_colaboradores[chave].casefold(),
-            )
-            colaborador_selecionado = st.selectbox(
-                "Filtrar por Colaborador:",
-                options=[None] + opcoes_colaboradores,
-                format_func=lambda chave: (
-                    "Todos" if chave is None else nomes_colaboradores[chave]
-                ),
-            )
+        if col_idx_anydesk:
+            limite_vermelho = linha_inicio_extras if linha_fim_extras else ws.max_row + 1
+            for row in range(2, limite_vermelho):
+                celula = ws.cell(row=row, column=col_idx_anydesk)
+                if celula.value is None or str(celula.value).strip() == "":
+                    celula.value = None
+                    celula.fill = preenchimento_vermelho
 
-        filtro_ativo = bool(pesquisa) or colaborador_selecionado is not None
-        grupos_exibicao = {}
-        pesquisa_normalizada = pesquisa.lower()
-        for chave, grupo in grupos_colaboradores.items():
-            if colaborador_selecionado is not None and chave != colaborador_selecionado:
-                continue
-            if pesquisa_normalizada and not any(
-                registro.astype(str)
-                .str.lower()
-                .str.contains(pesquisa_normalizada, na=False)
-                .any()
-                for registro in grupo
-            ):
-                continue
-            grupos_exibicao[chave] = grupo
+        for col in ws.columns:
+            max_length = 0
+            column_letter = col[0].column_letter
+            for cell in col:
+                try:
+                    if cell.value and len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except Exception:
+                    pass
+            ws.column_dimensions[column_letter].width = max(max_length + 4, 15)
 
-        lista_grupos = list(grupos_exibicao.values())
-        df_exibicao = (
-            pd.DataFrame(
-                [registro for grupo in lista_grupos for registro in grupo]
-            ).reset_index(drop=True)
-            if grupos_exibicao
-            else df_completo.iloc[0:0].copy()
-        )
+        wb.save(caminho_saida)
+        messagebox.showinfo("Sucesso!", f"Planilha gerada com sucesso em:\n{caminho_saida}")
 
-        if not filtro_ativo and df_exibicao.empty:
-            st.info("Nenhum equipamento cadastrado ate o momento.")
-        else:
-            total_registros = len(lista_grupos)
-            itens_por_pagina = 4
-            total_paginas = max(1, (total_registros + itens_por_pagina - 1) // itens_por_pagina)
-
-            filtro_paginacao = f"{pesquisa}|{colaborador_selecionado}|{total_registros}"
-            if st.session_state.get("filtro_lista_equipamentos") != filtro_paginacao:
-                st.session_state.filtro_lista_equipamentos = filtro_paginacao
-                st.session_state.pagina_lista_equipamentos = 1
-
-            pagina_atual = st.session_state.get("pagina_lista_equipamentos", 1)
-            pagina_atual = min(max(1, pagina_atual), total_paginas)
-            st.session_state.pagina_lista_equipamentos = pagina_atual
-
-            inicio = (pagina_atual - 1) * itens_por_pagina
-            fim = inicio + itens_por_pagina
-            df_pagina = lista_grupos[inicio:fim]
-
-            st.write(
-                f"Exibindo {inicio + 1 if total_registros else 0} a "
-                f"{min(fim, total_registros)} de {total_registros} colaboradores:"
-            )
-
-            if df_exibicao.empty:
-                st.warning("Nenhum equipamento encontrado com os filtros informados.")
-            else:
-                _, col_pag1, col_pag2, col_pag3, _ = st.columns([3, 1, 1.4, 1, 3])
-
-                with col_pag1:
-                    if st.button(
-                        "Anterior",
-                        use_container_width=True,
-                        disabled=pagina_atual <= 1,
-                        key="btn_pagina_anterior_equipamentos",
-                    ):
-                        st.session_state.pagina_lista_equipamentos = pagina_atual - 1
-                        st.rerun()
-                
-                with col_pag2:
-                    st.markdown(
-                        f"""
-                        <div style='text-align:center; padding-top: 0.45rem; white-space: nowrap;'>
-                            Pagina {pagina_atual} de {total_paginas}
-                        </div>
-                        """,
-                        unsafe_allow_html=True,
-                    )
-                
-                with col_pag3:
-                    if st.button(
-                        "Proxima",
-                        use_container_width=True,
-                        disabled=pagina_atual >= total_paginas,
-                        key="btn_pagina_proxima_equipamentos",
-                    ):
-                        st.session_state.pagina_lista_equipamentos = pagina_atual + 1
-                        st.rerun()
-
-                for i in range(0, len(df_pagina), 4):
-                    cols = st.columns(4)
-
-                    for deslocamento, (col, itens_grupo) in enumerate(
-                        zip(cols, df_pagina[i:i + 4])
-                    ):
-                        with col:
-                            itens_grupo = sorted(
-                                itens_grupo,
-                                key=lambda registro: registro.get("tipo")
-                                != "Estação de Trabalho",
-                            )
-                            status_grupo = [str(registro.get("status") or "-") for registro in itens_grupo]
-                            is_inativo = all(status.lower() == "inativo" for status in status_grupo)
-                            
-                            with st.container(border=True):
-                                # CORREÇÃO SOLICITADA: Se o equipamento estiver Inativo, aplica opacidade/transparência em todo o card
-                                if is_inativo:
-                                    st.markdown("<div style='opacity: 0.55; filter: grayscale(20%);'>", unsafe_allow_html=True)
-                                
-                                codigo_card = f"cadastro_{inicio + i + deslocamento}"
-                                nome_colaborador = next(
-                                    (
-                                        str(registro.get("colaborador")).strip()
-                                        for registro in itens_grupo
-                                        if not pd.isna(registro.get("colaborador"))
-                                        and str(registro.get("colaborador")).strip()
-                                    ),
-                                    "Sem colaborador",
-                                )
-                                codigos = list(dict.fromkeys(
-                                    str(registro.get("codigo_controle")).strip()
-                                    for registro in itens_grupo
-                                    if not pd.isna(registro.get("codigo_controle"))
-                                    and str(registro.get("codigo_controle")).strip()
-                                ))
-                                st.markdown(f"**Colaborador:** {nome_colaborador}")
-                                st.markdown(f"**Código(s) do cadastro:** {', '.join(codigos) or '-'}")
-                                primeiro_equipamento = itens_grupo[0]
-                                st.markdown(
-                                    f"**Equipamento 1: {primeiro_equipamento.get('tipo') or '-'}**  \n"
-                                    f"**Marca/Modelo:** {primeiro_equipamento.get('marca') or '-'} / "
-                                    f"{primeiro_equipamento.get('modelo') or '-'}  \n"
-                                    f"**Etiqueta Patrimônio Mult:** "
-                                    f"{primeiro_equipamento.get('service_tag') or '-'}"
-                                )
-
-                                expandido_key = f"card_expandido_{codigo_card}"
-                                expandido = st.session_state.get(expandido_key, False)
-                                if st.button(
-                                    "Recolher" if expandido else "Ver equipamentos e fotos",
-                                    key=f"btn_{expandido_key}",
-                                    use_container_width=True,
-                                ):
-                                    st.session_state[expandido_key] = not expandido
-                                    st.rerun()
-
-                                if expandido:
-                                    for indice_equipamento, registro in enumerate(itens_grupo, start=1):
-                                        st.markdown(f"**Equipamento {indice_equipamento}**")
-                                        caminhos_fotos = []
-                                        for foto in obter_lista_fotos(registro.get("fotos")):
-                                            caminho_foto = obter_caminho_bucket(foto)
-                                            if caminho_foto:
-                                                caminhos_fotos.append(caminho_foto)
-                                        if caminhos_fotos:
-                                            try:
-                                                mostrar_carrossel_fotos(
-                                                    caminhos_fotos,
-                                                    f"{codigo_card}_equip_{indice_equipamento}",
-                                                )
-                                                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                                            except Exception as e:
-                                                st.warning(f"Foto do equipamento encontrada, mas não foi possível carregar: {e}")
-                                        else:
-                                            st.info("Sem foto cadastrada para este equipamento.")
-                                        st.markdown(
-                                            f"**Tipo:** {registro.get('tipo') or '-'}  \n"
-                                            f"**Marca/Modelo:** {registro.get('marca') or '-'} / {registro.get('modelo') or '-'}  \n"
-                                            f"**Etiqueta Patrimônio Mult:** {registro.get('service_tag') or '-'}  \n"
-                                            f"**Data do cadastro:** {registro.get('data_registro') or '-'}  \n"
-                                            f"**Cadastrado por:** {registro.get('criado_por') or '-'}"
-                                        )
-                                        status_atual = registro.get("status") or "-"
-                                        if str(status_atual).lower() == "inativo":
-                                            st.markdown(
-                                                f"**Status:** <span style='color:red; font-weight:bold;'>{status_atual}</span>",
-                                                unsafe_allow_html=True,
-                                            )
-                                        else:
-                                            st.markdown(f"**Status:** {status_atual}")
-
-                                        descricao = registro.get("descricao")
-                                        if descricao and str(descricao).strip() not in ["", "None", "nan"]:
-                                            st.markdown(f"**Descrição:** {descricao}")
-                                    
-                                if is_inativo:
-                                    st.markdown("</div>", unsafe_allow_html=True)
-
-                col_btn1, col_btn2, _ = st.columns([1, 1, 6])
-
-                with col_btn1:
-                    dados_excel = gerar_excel(df_exibicao)
-                    st.download_button(
-                        label="Extrair em EXCEL",
-                        data=dados_excel,
-                        file_name="lista_equipamentos.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    )
-
-                with col_btn2:
-                    dados_pdf = gerar_pdf(df_exibicao, "Relacao de Equipamentos - Lista Geral")
-                    st.download_button(
-                        label="Extrair em PDF",
-                        data=dados_pdf,
-                        file_name="lista_equipamentos.pdf",
-                        mime="application/pdf",
-                    )
-    else:
-        st.info("Nenhum equipamento cadastrado ate o momento.")
-
-# --- 3. MENU: BAIXAS (Supervisor e Master) ---
-elif menu == "Baixas":
-    st.header("Gerenciamento de Baixas de Equipamentos")
-    
-    tab_listar, tab_nova = st.tabs(["Pesquisar Baixas", "➕ Nova Baixa"])
-    
-    with tab_listar:
-        pesquisa_baixa = st.text_input("Pesquisar baixas criadas (Digite a Etiqueta Patrimônio Mult ou Motivo):")
-        
-        # 1. Filtra trazendo apenas as baixas que NÃO foram arquivadas historicamente
-        res_baixas = supabase.table("baixas").select("*").eq("arquivado", False).order("data_baixa", desc=True).execute()
-        
-        if res_baixas.data:
-            df_baixas = pd.DataFrame(res_baixas.data)
-            
-            # -----------------------------------------------------------------
-            # SOLUÇÃO PARA DUPLICADOS: Mantém apenas a baixa mais recente de cada Etiqueta Patrimônio Mult
-            # -----------------------------------------------------------------
-            df_baixas = df_baixas.drop_duplicates(subset=["service_tag"], keep="first")
-            
-            # Busca todos os equipamentos para cruzar os dados de status
-            res_equips = supabase.table("equipamentos").select("*").execute()
-            df_equips = pd.DataFrame(res_equips.data) if res_equips.data else pd.DataFrame()
-            
-            if pesquisa_baixa:
-                p_lower = pesquisa_baixa.lower()
-                mascara = df_baixas.astype(str).apply(
-                    lambda x: x.str.lower().str.contains(p_lower, na=False)
-                ).any(axis=1)
-                df_baixas = df_baixas[mascara]
-            
-            if df_baixas.empty:
-                st.warning("Nenhuma baixa correspondente localizada.")
-            else:
-                # Contador para verificar se alguma baixa válida será exibida
-                baixas_exibidas = 0
-                
-                # Loop para renderizar cada baixa
-                for _, linha in df_baixas.iterrows():
-                    st_atual = linha["service_tag"]
-                    id_baixa = linha.get("id", "sem_id")
-                    
-                    # Localiza os dados do equipamento correspondente
-                    dados_equip = {}
-                    if not df_equips.empty:
-                        equip_filtrado = df_equips[df_equips["service_tag"].astype(str).str.upper() == str(st_atual).upper()]
-                        if not equip_filtrado.empty:
-                            dados_equip = equip_filtrado.iloc[0].to_dict()
-                    
-                    status_atual_equip = dados_equip.get('status', 'N/A')
-                    
-                    # REGRA DE FILTRO: PULA A RENDERIZAÇÃO SE O EQUIPAMENTO NÃO FOR INATIVO
-                    if status_atual_equip != "Inativo":
-                        continue
-                    
-                    # Se chegou até aqui, incrementa o contador de baixas visíveis
-                    baixas_exibidas += 1
-                    
-                    # --- CONTAINER PRINCIPAL DA BAIXA ---
-                    with st.container(border=True):
-                        col_foto, col_dados_baixa, col_dados_equip = st.columns([1.5, 2, 1.5])
-                        
-                        # --- COLUNA DA ESQUERDA: FOTOS ---
-                        with col_foto:
-                            codigo_card = f"baixa_{str(id_baixa)}"
-                            fotos_raw = obter_lista_fotos(linha.get("fotos"))
-                            caminhos_fotos = []
-                            for foto in fotos_raw:
-                                caminho_foto = obter_caminho_bucket(foto)
-                                if caminho_foto:
-                                    caminhos_fotos.append(caminho_foto)
-                            
-                            if caminhos_fotos:
-                                try:
-                                    mostrar_carrossel_fotos(caminhos_fotos, codigo_card)
-                                    st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                                except Exception:
-                                    st.warning("Foto encontrada, mas não foi possível carregar.")
-                            else:
-                                st.info("Sem foto cadastrada nesta baixa.")
-                        
-                        # --- COLUNA DO CENTRO: DADOS DA BAIXA ---
-                        with col_dados_baixa:
-                            st.markdown(f"### Baixa: {st_atual}")
-                            st.markdown(f"**Motivo:** {str(linha['motivo']).capitalize()}")
-                            st.markdown(f"**Data da Baixa:** {linha.get('data_baixa', 'Não informada')}")
-                            st.markdown(f"**Criado por:** {linha.get('criado_por', 'N/A')}")
-                            if linha.get('observacao'):
-                                st.markdown(f"**Observação:** *{linha['observacao']}*")
-                        
-                        # --- COLUNA DA DIREITA: DADOS DO EQUIPAMENTO ---
-                        with col_dados_equip:
-                            st.markdown("**Dados do Equipamento**") 
-                            if dados_equip:
-                                st.markdown(f"**Tipo:** {dados_equip.get('tipo', 'N/A')}")
-                                st.markdown(f"**Colaborador:** {dados_equip.get('colaborador', 'N/A')}")
-                                st.markdown(f"**Status:** {status_atual_equip}")
-                                
-                                # SÓ MOSTRA O BOTÃO SE FOR MASTER
-                                st.markdown("---")
-                                if st.button("🔄 Reativar Equipamento", key=f"btn_reativar_{id_baixa}", type="primary", use_container_width=True):
-                                    with st.spinner("Reativando equipamento e removendo da lista..."):
-                                        try:
-                                            supabase.table("equipamentos").update({"status": "Ativo"}).eq("service_tag", st_atual).execute()
-                                            supabase.table("baixas").update({"arquivado": True}).eq("id", id_baixa).execute()
-                                            registrar_log(
-                                                "Reativação",
-                                                f'O administrador finalizou e ocultou a baixa do equipamento ST: {st_atual}.',
-                                                dados_equip.get("colaborador", "Não informado"),
-                                            )
-                                            st.success(f"Equipamento {st_atual} reativado e removido do painel!")
-                                            import time
-                                            time.sleep(1)
-                                            st.rerun()
-                                        except Exception as e:
-                                            st.error(f"Erro ao reativar equipamento: {e}")
-                            else:
-                                st.caption("Equipamento não localizado no banco.")
-                
-                # Caso existam baixas no banco mas todas já estejam com equipamentos Ativos
-                if baixas_exibidas == 0:
-                    st.info("Nenhum equipamento inativo listado nas baixas atuais.")
-        else:
-            st.info("Nenhum registro de baixa ativo no momento.")
-
-    with tab_nova:
-        st.subheader("Registrar Nova Baixa")
-        
-        # Mantemos a busca trazendo todos os equipamentos para que, caso dê algum erro, o usuário possa visualizar,
-        # mas no selectbox exibiremos as opções disponíveis.
-        res_equips_todos = supabase.table("equipamentos").select("service_tag", "tipo", "colaborador", "status").execute()
-        
-        if not res_equips_todos.data:
-            st.warning("Não há equipamentos cadastrados disponíveis para baixa.")
-        else:
-            lista_equips = res_equips_todos.data
-            dict_equips = {}
-            
-            for item in lista_equips:
-                st_val = item.get("service_tag")
-                if st_val and str(st_val).strip():
-                    dict_equips[str(st_val).strip().upper()] = item
-                    
-            opcoes_st = ["Selecione..."] + sorted(list(dict_equips.keys()))
-            st_selecionada = st.selectbox("Selecione a Etiqueta Patrimônio Mult (Obrigatório)*", options=opcoes_st)
-            
-            if st_selecionada != "Selecione...":
-                dados_prev = dict_equips[st_selecionada]
-                cor_status = "green" if dados_prev['status'] == "Ativo" else "red"
-                st.info(f"**Prévia do Equipamento:**\n* **Tipo:** {dados_prev['tipo']}\n* **Colaborador Responsável:** {dados_prev['colaborador']}\n* **Status Atual:** :{cor_status}[{dados_prev['status']}]")
-            
-            with st.form("form_registro_baixa", clear_on_submit=True):
-                motivo = st.selectbox("Selecione o motivo da baixa (Obrigatório)*", ["", "manutenção", "descarte", "troca"])
-                observacao = st.text_area("Observação (Opcional - Máx. 240 caracteres)", max_chars=240)
-                fotos_baixa = st.file_uploader("Anexar fotos da baixa (Opcional - Máx 10 fotos)", type=["png", "jpg", "jpeg"], accept_multiple_files=True, key="fotos_baixa_input")
-                
-                if st.form_submit_button("Confirmar Baixa"):
-                    if st_selecionada == "Selecione..." or not motivo:
-                        st.error("Por favor, preencha todos os campos obrigatórios (*).")
-                    elif fotos_baixa and len(fotos_baixa) > 10:
-                        st.error("Permitido anexar no máximo 10 fotos.")
-                    else:
-                        # -----------------------------------------------------------------
-                        # VALIDAÇÃO DIRETA E EXATA: BLOQUEIA APENAS SE ESTIVER INATIVO NO BANCO
-                        # -----------------------------------------------------------------
-                        status_atual = dict_equips[st_selecionada].get("status")
-                        
-                        if status_atual == "Inativo":
-                            st.error(f"⚠️ O equipamento {st_selecionada} já está Inativo! Resolva a baixa anterior (reative o equipamento) antes de abrir uma nova.")
-                        else:
-                            urls_fotos_baixa = []
-                            erro_upload_baixa = False
-                            
-                            if fotos_baixa:
-                                with st.spinner("Fazendo upload das fotos da baixa..."):
-                                    for idx, foto in enumerate(fotos_baixa):
-                                        ext = foto.name.split(".")[-1]
-                                        caminho_storage = f"baixas/{st_selecionada}/{st_selecionada}_{idx}_{int(datetime.now().timestamp())}.{ext}"
-                                        try:
-                                            supabase.storage.from_(BUCKET_FOTOS).upload(caminho_storage, foto.read())
-                                            url = supabase.storage.from_(BUCKET_FOTOS).get_public_url(caminho_storage)
-                                            urls_fotos_baixa.append(url)
-                                        except Exception as e:
-                                            st.error(f"Falha ao enviar a foto {foto.name}: {e}")
-                                            erro_upload_baixa = True
-                                            break
-                            
-                            if not erro_upload_baixa:
-                                try:
-                                    supabase.table("baixas").insert({
-                                        "service_tag": st_selecionada,
-                                        "motivo": motivo,
-                                        "observacao": observacao if observacao else None,
-                                        "fotos": urls_fotos_baixa,
-                                        "criado_por": "Administrador",
-                                        "arquivado": False
-                                    }).execute()
-                                    
-                                    # Altera para Inativo
-                                    supabase.table("equipamentos").update({"status": "Inativo"}).eq("service_tag", st_selecionada).execute()
-                                    registrar_log(
-                                        "Baixa",
-                                        f'O administrador deu baixa no equipamento ST: {st_selecionada} por motivo de {motivo}.',
-                                        dict_equips[st_selecionada].get("colaborador", "Não informado"),
-                                    )
-                                    
-                                    st.success(f"Baixa efetuada e equipamento (ST: {st_selecionada}) definido como Inativo com sucesso!")
-                                    import time
-                                    time.sleep(2)
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Erro ao processar a requisição no banco de dados: {e}")
-
-# --- 4. RELATORIOS ---
-elif menu == "Relatórios":
-    st.header("Equipamentos por Colaborador")
-
-    registros_equipamentos = []
-    inicio = 0
-    tamanho_pagina = 1000
-    while True:
-        resposta = (
-            supabase.table("equipamentos")
-            .select("id, colaborador, tipo, marca, modelo, service_tag")
-            .order("id")
-            .range(inicio, inicio + tamanho_pagina - 1)
-            .execute()
-        )
-        pagina = resposta.data or []
-        registros_equipamentos.extend(pagina)
-        if len(pagina) < tamanho_pagina:
-            break
-        inicio += tamanho_pagina
-
-    nomes_colaboradores = sorted(
-        {
-            str(item.get("colaborador")).strip()
-            for item in registros_equipamentos
-            if item.get("colaborador") and str(item.get("colaborador")).strip()
-        },
-        key=str.casefold,
-    )
-
-    col_tipo, col_colaborador = st.columns(2)
-    with col_tipo:
-        tipo_selecionado = st.selectbox(
-            "Tipo de equipamento:",
-            TIPOS_EQUIPAMENTO,
-        )
-    with col_colaborador:
-        colaborador_selecionado = st.selectbox(
-            "Colaborador:",
-            [None] + nomes_colaboradores,
-            format_func=lambda nome: "Todos" if nome is None else nome,
-        )
-
-    if not nomes_colaboradores:
-        st.warning("Não há colaboradores cadastrados para gerar o relatório.")
-    elif st.button("Gerar relatório"):
-        df_relatorio = criar_df_equipamentos_por_colaborador(
-            registros_equipamentos,
-            tipo_selecionado,
-            colaborador_selecionado,
-        )
-        st.markdown("---")
-        st.dataframe(df_relatorio, use_container_width=True, hide_index=True)
-
-        col_excel, col_pdf = st.columns(2)
-        with col_excel:
-            st.download_button(
-                "Baixar EXCEL",
-                data=gerar_excel(df_relatorio),
-                file_name="equipamentos_por_colaborador.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        with col_pdf:
-            st.download_button(
-                "Baixar PDF",
-                data=gerar_pdf(df_relatorio, "Equipamentos por Colaborador"),
-                file_name="equipamentos_por_colaborador.pdf",
-                mime="application/pdf",
-            )
+    except Exception as e:
+        messagebox.showerror("Erro inesperado", f"Ocorreu um erro ao processar:\n{str(e)}")
 
 
-# --- 5. LOG DE ATIVIDADES ---
-elif menu == "Log de Atividades":
-    st.header("Log de Atividades do Sistema")
-    st.caption("Exibe todas as inserções, atualizações e exclusões em tempo real.")
-    
-    try:
-        logs = supabase.table("logs_sistema").select("*").execute()
-    except APIError as e:
-        st.error(f"Erro ao consultar a tabela `logs_sistema` no Supabase: {e}")
-        st.stop()
-    
-    if logs.data:
-        df_logs = pd.DataFrame(logs.data)
-        if "created_at" in df_logs.columns:
-            df_logs = df_logs.sort_values("created_at", ascending=False)
-        df_logs = df_logs.rename(columns={
-            "created_at": "Data/Hora Evento",
-            "colaborador": "Colaborador Responsável",
-            "acao": "Operação",
-            "resumo": "Histórico Detalhado"
-        })
-        if "id" in df_logs.columns:
-            df_logs = df_logs.drop(columns=["id"])
-            
-        st.table(df_logs)
-    else:
-        st.info("Nenhuma atividade registrada nos logs.")
-
-
-# --- Acesso à área administrativa no rodapé ---
-st.markdown("---")
-if not st.session_state.admin_authenticated:
-    if st.button("Acessar área admin"):
-        st.session_state.admin_access_requested = True
-        st.rerun()
+if __name__ == "__main__":
+    main()
